@@ -10,7 +10,8 @@
     "start": "vite start",
     "preview": "vite preview",
     "convex:dev": "convex dev",
-    "convex:dev:local": "convex dev --local --once"
+    "convex:dev:local": "convex dev --local --once",
+    "local:docker": "docker compose up -d"
   },
   "dependencies": {
     "@fontsource-variable/montserrat": "^5.2.8",
