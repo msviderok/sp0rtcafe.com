@@ -3,20 +3,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --parallel dev:server convex:dev",
+    "dev": "bun run --parallel dev:serve convex:dev",
+    "dev:local": "bun run --parallel dev:serve convex:dev:local",
     "dev:serve": "vite dev",
     "build": "vite build",
     "start": "vite start",
     "preview": "vite preview",
-    "convex:dev": "convex dev"
+    "convex:dev": "convex dev",
+    "convex:dev:local": "convex dev --local --once"
   },
   "dependencies": {
+    "@fontsource-variable/montserrat": "^5.2.8",
+    "@msviderok/base-ui-solid": "^1.0.0-beta.9",
     "@solidjs/router": "^0.15.0",
     "@solidjs/start": "2.0.0-alpha.2",
     "@solidjs/vite-plugin-nitro-2": "^0.1.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "convex": "^1.34.0",
     "convex-solidjs": "^0.0.3",
+    "shadcn": "^4.1.0",
     "solid-js": "^1.9.5",
+    "solid-phosphor": "^1.0.16",
+    "tailwind-merge": "^3.5.0",
+    "tw-animate-css": "^1.4.0",
     "vite": "^7.3.1"
   },
   "devDependencies": {

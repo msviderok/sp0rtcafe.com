@@ -37,5 +37,10 @@
       "allowComments": true,
       "allowTrailingCommas": true
     }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   }
 }
