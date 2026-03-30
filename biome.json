@@ -23,10 +23,14 @@
     "rules": {
       "recommended": true,
       "suspicious": {
-        "noShorthandPropertyOverrides": "off"
+        "noShorthandPropertyOverrides": "off",
+        "noEmptyInterface": "off"
       },
       "style": {
         "noNonNullAssertion": "off"
+      },
+      "complexity": {
+        "noBannedTypes": "off"
       }
     }
   },

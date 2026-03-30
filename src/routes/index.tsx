@@ -1,3 +1,9 @@
+import { clientOnly } from "@solidjs/start";
+
+const MainScreen = clientOnly(async () => ({
+  default: (await import("~/components/MainScreen")).default,
+}));
+
 export default function Home() {
-  return <main class="text-center mx-auto text-gray-700 p-4"></main>;
+  return <MainScreen />;
 }
