@@ -8,13 +8,21 @@
  * @module
  */
 
+import type * as sceneAssets from "../sceneAssets.js";
+import type * as scenes from "../scenes.js";
+import type * as sprites from "../sprites.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  sceneAssets: typeof sceneAssets;
+  scenes: typeof scenes;
+  sprites: typeof sprites;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.

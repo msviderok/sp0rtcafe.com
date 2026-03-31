@@ -1,9 +1,5 @@
-import { clientOnly } from "@solidjs/start";
-
-const MainScreen = clientOnly(async () => ({
-  default: (await import("~/components/MainScreen")).default,
-}));
+import MainScreen from '~/components/MainScreen';
 
 export default function Home() {
-  return <MainScreen />;
+	return <MainScreen />;
 }
