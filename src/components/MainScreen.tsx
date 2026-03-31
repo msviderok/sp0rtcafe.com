@@ -5,10 +5,10 @@ import createGameLoop from "~/lib/createGameLoop";
 import Scene from "./Scene";
 
 function contextFactory() {
-  // const [] =
+  return {};
 }
 
-type State = any;
+type State = ReturnType<typeof contextFactory>;
 
 const MainContext = createContext<{
   store: Store<State>;
@@ -26,7 +26,7 @@ function useMainContext() {
 }
 
 export default function MainScreen(props: ParentProps) {
-  const [store, setStore] = createStore({});
+  const [store, setStore] = createStore<State>({});
   const gameloop = createGameLoop({
     autostart: false,
     fn: () => {},

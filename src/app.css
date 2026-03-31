@@ -40,6 +40,8 @@
   --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
   --sidebar-border: oklch(0.925 0.005 214.3);
   --sidebar-ring: oklch(0.723 0.014 214.4);
+
+  --floor-texture-size: 400px 400px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,7 +97,7 @@ body {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --spacing-scene: 3000px;
+  --spacing-scene: 1920px;
 }
 
 .dark {

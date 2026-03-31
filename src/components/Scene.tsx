@@ -13,19 +13,22 @@ import WallSign from "./scene/WallSign";
 
 export default function Scene(props: ComponentProps<"div">) {
   return (
-    <div class="w-[1920px] h-[1000px] flex items-center justify-center overflow-hidden" {...props}>
-      <div class="w-full h-full relative overflow-scroll">
+    <div
+      class="flex min-h-screen w-full items-center justify-center overflow-hidden bg-black"
+      {...props}
+    >
+      <div class="relative h-[1000px] w-scene shrink-0 overflow-hidden">
         <Background />
-        <WallSign />
-        <WallPosters />
-        <BarArea />
-        <TvZone />
-        <Teleprompter />
-        <Jukebox />
-        <Tables />
-        <FloorPlants />
-        <CharacterZone />
-        <RightSeating />
+        {/* <WallSign /> */}
+        {/* <WallPosters /> */}
+        {/* <BarArea /> */}
+        {/* <TvZone /> */}
+        {/* <Teleprompter /> */}
+        {/* <Jukebox /> */}
+        {/* <Tables /> */}
+        {/* <FloorPlants /> */}
+        {/* <CharacterZone /> */}
+        {/* <RightSeating /> */}
       </div>
     </div>
   );
