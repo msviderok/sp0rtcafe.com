@@ -135,3 +135,19 @@ export const remove = mutation({
     await ctx.db.delete(args.assetId);
   },
 });
+
+export const restore = mutation({
+  args: {
+    sceneId: v.id("scenes"),
+    spriteId: v.id("sprites"),
+    x: v.number(),
+    y: v.number(),
+    width: v.number(),
+    height: v.number(),
+    rotation: v.number(),
+    locked: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("sceneAssets", args);
+  },
+});

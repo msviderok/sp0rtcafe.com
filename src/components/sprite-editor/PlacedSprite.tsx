@@ -45,6 +45,7 @@ export default function PlacedSprite(props: {
 					'background-image': `url(${props.sprite.url})`,
 				}}
 				onPointerDown={(event) => {
+					event.stopPropagation();
 					props.onSelect();
 					if (!props.locked) {
 						props.onMoveStart(event);
@@ -55,10 +56,10 @@ export default function PlacedSprite(props: {
 			{props.isSelected ? (
 				<>
 					<div
-						class="pointer-events-none absolute inset-0 rounded-[10px] border-2 border-dashed"
+						class="pointer-events-none absolute inset-0 border-2 border-solid"
 						style={{
-							borderColor: 'rgb(242 187 85 / 0.95)',
-							'box-shadow': '0 0 0 1px rgb(0 0 0 / 0.25)',
+							borderColor: 'rgb(255 217 122 / 1)',
+							'box-shadow': '0 0 0 1px rgb(0 0 0 / 0.5), 0 0 18px rgb(255 201 102 / 0.28)',
 						}}
 					/>
 
@@ -75,12 +76,14 @@ export default function PlacedSprite(props: {
 							{props.locked ? 'Unlock' : 'Lock'}
 						</button>
 						<button
-							class="rounded-full px-2 py-1 text-rose-200 transition hover:bg-white/10"
+							class={`rounded-full px-2 py-1 transition hover:bg-white/10 ${props.locked ? 'cursor-not-allowed text-white/30' : 'text-rose-200'}`}
 							type="button"
 							onPointerDown={(event) => event.stopPropagation()}
 							onClick={(event) => {
 								event.stopPropagation();
-								props.onDelete();
+								if (!props.locked) {
+									props.onDelete();
+								}
 							}}
 						>
 							Delete
@@ -89,7 +92,7 @@ export default function PlacedSprite(props: {
 
 					<div class="absolute left-1/2 top-0 h-5 w-px -translate-x-1/2 -translate-y-full bg-[#ffd58a]/70" />
 					<div
-						class="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-[22px] cursor-grab rounded-full border border-[#2d190f] bg-[#ffd58a]"
+						class={`absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-[22px] rounded-full border border-[#2d190f] bg-[#ffd58a] ${props.locked ? 'cursor-not-allowed opacity-35' : 'cursor-grab'}`}
 						onPointerDown={(event) => {
 							event.stopPropagation();
 							if (!props.locked) {
