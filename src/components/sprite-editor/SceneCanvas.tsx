@@ -1,3 +1,4 @@
+import { useDragDropMonitor } from '@dnd-kit/solid';
 import { useMutation, useQuery } from 'convex-solidjs';
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
@@ -5,6 +6,7 @@ import type { Id } from '../../../convex/_generated/dataModel';
 import GridOverlay from './GridOverlay';
 import GridSizeControl from './GridSizeControl';
 import PlacedSprite from './PlacedSprite';
+import { isDrawerSpriteDragData } from './spriteDrag';
 
 const SCENE_WIDTH = 1920;
 const SCENE_HEIGHT = 1000;
@@ -123,6 +125,7 @@ function CanvasWithScene(props: {
 	const [localTransforms, setLocalTransforms] = createSignal<Record<string, LocalTransform>>({});
 	const [editingAsset, setEditingAsset] = createSignal<EditingAsset | null>(null);
 	const [deletedStack, setDeletedStack] = createSignal<DeletedAssetSnapshot[]>([]);
+	const [isDropTarget, setIsDropTarget] = createSignal(false);
 
 	const placedAssets = createMemo(() => assets.data() ?? []);
 
@@ -157,6 +160,81 @@ function CanvasWithScene(props: {
 
 			return changed ? next : current;
 		});
+	});
+
+	const getCanvasPointerPosition = (clientX: number, clientY: number) => {
+		if (!canvasRef) {
+			return null;
+		}
+
+		const rect = canvasRef.getBoundingClientRect();
+		const rawX = clientX - rect.left;
+		const rawY = clientY - rect.top;
+		const inside = rawX >= 0 && rawX <= rect.width && rawY >= 0 && rawY <= rect.height;
+
+		return {
+			inside,
+			rawX,
+			rawY,
+		};
+	};
+
+	useDragDropMonitor({
+		onDragStart: ({ operation }) => {
+			if (isDrawerSpriteDragData(operation.source?.data)) {
+				props.onDragStateChange(true);
+				setIsDropTarget(false);
+			}
+		},
+		onDragMove: ({ operation, nativeEvent }) => {
+			if (!isDrawerSpriteDragData(operation.source?.data)) {
+				return;
+			}
+
+			const fallbackPosition = operation.position as { current?: { x: number; y: number } };
+			const clientX = nativeEvent instanceof PointerEvent ? nativeEvent.clientX : fallbackPosition.current?.x;
+			const clientY = nativeEvent instanceof PointerEvent ? nativeEvent.clientY : fallbackPosition.current?.y;
+
+			if (clientX === undefined || clientY === undefined) {
+				setIsDropTarget(false);
+				return;
+			}
+
+			setIsDropTarget(getCanvasPointerPosition(clientX, clientY)?.inside ?? false);
+		},
+		onDragEnd: ({ operation, nativeEvent, canceled }) => {
+			if (!isDrawerSpriteDragData(operation.source?.data)) {
+				return;
+			}
+
+			props.onDragStateChange(false);
+
+			const fallbackPosition = operation.position as { current?: { x: number; y: number } };
+			const clientX = nativeEvent instanceof PointerEvent ? nativeEvent.clientX : fallbackPosition.current?.x;
+			const clientY = nativeEvent instanceof PointerEvent ? nativeEvent.clientY : fallbackPosition.current?.y;
+
+			if (clientX === undefined || clientY === undefined) {
+				setIsDropTarget(false);
+				return;
+			}
+
+			const pointerPosition = getCanvasPointerPosition(clientX, clientY);
+			setIsDropTarget(false);
+
+			if (canceled || !pointerPosition?.inside) {
+				return;
+			}
+
+			const x = Math.max(0, Math.min(SCENE_WIDTH, snapToGrid(pointerPosition.rawX, props.gridSize)));
+			const y = Math.max(0, Math.min(SCENE_HEIGHT, snapToGrid(pointerPosition.rawY, props.gridSize)));
+
+			void placeAsset.mutate({
+				sceneId: props.sceneId,
+				spriteId: operation.source.data.spriteId,
+				x,
+				y,
+			});
+		},
 	});
 
 	const deleteAsset = (
@@ -374,30 +452,6 @@ function CanvasWithScene(props: {
 		});
 	});
 
-	const onDrop: DragEventHandler<HTMLDivElement, DragEvent> = async (event) => {
-		event.preventDefault();
-		props.onDragStateChange(false);
-
-		const spriteId = event.dataTransfer?.getData('spriteId') as Id<'sprites'> | '';
-
-		if (!spriteId || !canvasRef) {
-			return;
-		}
-
-		const rect = canvasRef.getBoundingClientRect();
-		const rawX = event.clientX - rect.left;
-		const rawY = event.clientY - rect.top;
-		const x = Math.max(0, Math.min(SCENE_WIDTH, snapToGrid(rawX, props.gridSize)));
-		const y = Math.max(0, Math.min(SCENE_HEIGHT, snapToGrid(rawY, props.gridSize)));
-
-		await placeAsset.mutate({
-			sceneId: props.sceneId,
-			spriteId,
-			x,
-			y,
-		});
-	};
-
 	const startEdit = (
 		asset: {
 			_id: Id<'sceneAssets'>;
@@ -448,12 +502,7 @@ function CanvasWithScene(props: {
 			}}
 			gridSize={props.gridSize}
 			showGrid={props.showGrid}
-			onDragOver={(event) => {
-				event.preventDefault();
-				props.onDragStateChange(true);
-			}}
-			onDragLeave={() => props.onDragStateChange(false)}
-			onDrop={onDrop}
+			isDropTarget={isDropTarget()}
 			onPointerDown={() => setSelectedAssetId(null)}
 		>
 			<Show
@@ -559,24 +608,19 @@ function CanvasWithScene(props: {
 function CanvasFrame(props: {
 	gridSize: number;
 	showGrid: boolean;
+	isDropTarget?: boolean;
 	children?: import('solid-js').JSXElement;
 	ref?: (element: HTMLDivElement) => void;
-	onDragOver?: DragEventHandler<HTMLDivElement, DragEvent>;
-	onDragLeave?: DragEventHandler<HTMLDivElement, DragEvent>;
-	onDrop?: DragEventHandler<HTMLDivElement, DragEvent>;
 	onPointerDown?: (event: PointerEvent) => void;
 }) {
 	return (
 		<div
 			ref={props.ref}
-			class="relative overflow-hidden rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)]"
+			class={`relative overflow-hidden rounded-[24px] border bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)] transition-colors ${props.isDropTarget ? 'border-[#f2bb55]/70 shadow-[0_0_0_1px_rgba(242,187,85,0.3),0_0_42px_rgba(242,187,85,0.16)]' : 'border-white/10'}`}
 			style={{
 				width: `${SCENE_WIDTH}px`,
 				height: `${SCENE_HEIGHT}px`,
 			}}
-			onDragOver={props.onDragOver}
-			onDragLeave={props.onDragLeave}
-			onDrop={props.onDrop}
 			onPointerDown={props.onPointerDown}
 		>
 			<GridOverlay gridSize={props.gridSize} visible={props.showGrid} />

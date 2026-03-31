@@ -2,6 +2,28 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  files: defineTable({
+    uploadThingKey: v.string(),
+    fileName: v.string(),
+    url: v.optional(v.string()),
+    size: v.optional(v.number()),
+    mimeType: v.optional(v.string()),
+    uploadedAt: v.optional(v.number()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("uploading"),
+      v.literal("uploaded"),
+      v.literal("failed"),
+    ),
+    progress: v.number(),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    error: v.optional(v.string()),
+  })
+    .index("by_uploadThingKey", ["uploadThingKey"])
+    .index("by_status", ["status"])
+    .index("by_fileName", ["fileName"]),
+
   sprites: defineTable({
     key: v.string(),
     url: v.string(),

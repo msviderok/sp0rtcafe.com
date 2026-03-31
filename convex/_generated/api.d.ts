@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as files from "../files.js";
 import type * as sceneAssets from "../sceneAssets.js";
 import type * as scenes from "../scenes.js";
 import type * as sprites from "../sprites.js";
@@ -19,6 +20,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  files: typeof files;
   sceneAssets: typeof sceneAssets;
   scenes: typeof scenes;
   sprites: typeof sprites;
