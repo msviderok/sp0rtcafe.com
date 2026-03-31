@@ -7,8 +7,7 @@
     "dev:local": "bun run --parallel dev:serve convex:dev:local",
     "dev:serve": "vite dev",
     "build": "vite build",
-    "start": "vite start",
-    "preview": "vite preview",
+    "start": "vite preview",
     "convex:dev": "convex dev",
     "convex:dev:local": "convex dev --local --once",
     "local:docker": "docker compose up -d"
@@ -18,7 +17,6 @@
     "@fontsource-variable/montserrat": "^5.2.8",
     "@msviderok/base-ui-solid": "^1.0.0-beta.9",
     "@solidjs/router": "^0.16.1",
-    "@solidjs/start": "2.0.0-alpha.2",
     "@solidjs/vite-plugin-nitro-2": "^0.1.0",
     "@uploadthing/solid": "^7.3.3",
     "class-variance-authority": "^0.7.1",
