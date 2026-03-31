@@ -9,10 +9,9 @@ export default function Background() {
         <div class="absolute inset-0" style={{ "background-image": `url(${wallBaseColor})` }} />
         <div class="absolute inset-0 opacity-10" style={{ "background-image": `url(${wall})` }} />
       </div>
-
       <div
-        class="absolute bottom-0 left-0 right-0 h-[200px] bg-amber-950 bg-center bg-repeat bg-size-(--floor-texture-size) border-t-8 border-amber-900"
         style={{ "background-image": `url(${floor})` }}
+        class="absolute bottom-0 left-0 right-0 h-(--floor-h) bg-amber-950 bg-center bg-repeat bg-size-(--floor-texture-size) border-t-8 border-amber-950"
       />
     </>
   );

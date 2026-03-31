@@ -14,14 +14,14 @@ import WallSign from "./scene/WallSign";
 export default function Scene(props: ComponentProps<"div">) {
   return (
     <div
-      class="flex min-h-screen w-full items-center justify-center overflow-hidden bg-black"
+      class="flex min-h-screen w-full items-center justify-center relative overflow-hidden"
       {...props}
     >
-      <div class="relative h-[1000px] w-scene shrink-0 overflow-hidden">
+      <div class="relative h-[1000px] w-scene shrink-0 overflow-hidden" style={{}}>
         <Background />
+        <BarArea />
         {/* <WallSign /> */}
         {/* <WallPosters /> */}
-        {/* <BarArea /> */}
         {/* <TvZone /> */}
         {/* <Teleprompter /> */}
         {/* <Jukebox /> */}

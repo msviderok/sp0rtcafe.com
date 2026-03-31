@@ -42,6 +42,18 @@
   --sidebar-ring: oklch(0.723 0.014 214.4);
 
   --floor-texture-size: 400px 400px;
+  --floor-h: 200px;
+  --scene-h: 1000px;
+
+  --bar-stand-og-w: 230px;
+  --bar-stand-og-h: 57px;
+  --bar-stand-w: calc(var(--bar-stand-og-w) * 3);
+  --bar-stand-h: calc(var(--bar-stand-og-h) * 3);
+
+  --bar-shelf-og-w: 237px;
+  --bar-shelf-og-h: 177px;
+  --bar-shelf-w: calc(var(--bar-shelf-og-w) * 3);
+  --bar-shelf-h: calc(var(--bar-shelf-og-h) * 3);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -137,6 +149,7 @@ body {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    image-rendering: pixelated;
   }
   body {
     @apply bg-background text-foreground;
