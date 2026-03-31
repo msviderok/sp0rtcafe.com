@@ -54,6 +54,12 @@
   --bar-shelf-og-h: 177px;
   --bar-shelf-w: calc(var(--bar-shelf-og-w) * 3);
   --bar-shelf-h: calc(var(--bar-shelf-og-h) * 3);
+
+  --jukebox-og-w: 768px;
+  --jukebox-og-h: 1198px;
+  --jukebox-scale: 0.4;
+  --jukebox-w: calc(var(--jukebox-og-w) * var(--jukebox-scale));
+  --jukebox-h: calc(var(--jukebox-og-h) * var(--jukebox-scale));
 }
 
 @media (prefers-color-scheme: dark) {

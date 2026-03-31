@@ -20,11 +20,11 @@ export default function Scene(props: ComponentProps<"div">) {
       <div class="relative h-[1000px] w-scene shrink-0 overflow-hidden" style={{}}>
         <Background />
         <BarArea />
+        <Jukebox />
         {/* <WallSign /> */}
         {/* <WallPosters /> */}
         {/* <TvZone /> */}
         {/* <Teleprompter /> */}
-        {/* <Jukebox /> */}
         {/* <Tables /> */}
         {/* <FloorPlants /> */}
         {/* <CharacterZone /> */}
