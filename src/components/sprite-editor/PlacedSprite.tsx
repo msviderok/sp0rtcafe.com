@@ -28,6 +28,7 @@ export type SceneSprite = {
   url: string;
   width: number;
   height: number;
+  opacity?: number;
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
@@ -45,6 +46,7 @@ export default function PlacedSprite(props: {
   locked: boolean;
   canResizeFreely: boolean;
   selectionMode: "none" | "single" | "multi";
+  actionsDisabled?: boolean;
   isStyleEditorOpen: boolean;
   styleEditorContent?: JSXElement;
   onSelect: (event: PointerEvent) => void;
@@ -55,9 +57,14 @@ export default function PlacedSprite(props: {
   onToggleLock: () => void;
   onToggleStyleEditor: () => void;
 }) {
+  const cornerHandleClass =
+    "absolute z-40 flex h-8 w-8 items-center justify-center rounded-full transition";
+  const cornerHandleVisualClass =
+    "pointer-events-none h-3.5 w-3.5 border-[#ffd58a] drop-shadow-[0_0_10px_rgba(255,213,138,0.2)]";
+
   return (
     <div
-      class="absolute origin-center"
+      class="absolute origin-center [image-rendering:pixelated]"
       style={{
         left: `${props.x}px`,
         top: `${props.y}px`,
@@ -69,7 +76,10 @@ export default function PlacedSprite(props: {
     >
       <div
         class="absolute inset-0 z-10 bg-no-repeat bg-size-[100%_100%] touch-none"
-        style={getSpriteBackgroundStyle(props.sprite)}
+        style={{
+          ...getSpriteBackgroundStyle(props.sprite),
+          opacity: String(props.sprite.opacity ?? 1),
+        }}
         onPointerDown={(event) => {
           event.stopPropagation();
           props.onSelect(event);
@@ -88,7 +98,12 @@ export default function PlacedSprite(props: {
             }}
           />
 
-          <div class="absolute -top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/80 px-1 py-0.5 backdrop-blur-sm">
+          <div
+            class={cn(
+              "absolute left-1/2 top-3 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/12 bg-[#120f0d]/78 px-1 py-0.5 shadow-[0_14px_36px_rgba(0,0,0,0.38)] backdrop-blur-xl transition",
+              props.actionsDisabled && "pointer-events-none opacity-40"
+            )}
+          >
             <Popover.Root
               open={props.isStyleEditorOpen}
               onOpenChange={(open) => {
@@ -97,10 +112,10 @@ export default function PlacedSprite(props: {
             >
               <Popover.Trigger
                 class={cn(
-                  "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                  "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
                   props.isStyleEditorOpen
-                    ? "bg-white/15 text-white"
-                    : "text-white/60 hover:bg-white/8 hover:text-white/90"
+                    ? "border-white/16 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md"
+                    : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
                 )}
                 onPointerDown={(event: PointerEvent) => event.stopPropagation()}
                 onClick={(event: MouseEvent) => event.stopPropagation()}
@@ -111,7 +126,11 @@ export default function PlacedSprite(props: {
               <Popover.Content
                 side="top"
                 sideOffset={12}
-                class="w-64 rounded-xl border border-white/6 bg-[#1a1a1a]/95 p-3 text-white backdrop-blur-xl"
+                positionMethod="fixed"
+                collisionPadding={16}
+                sticky
+                collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "end" }}
+                class="w-72 rounded-2xl border border-white/10 bg-[#120f0d]/72 p-3.5 text-white shadow-[0_28px_60px_rgba(0,0,0,0.52)] backdrop-blur-2xl"
               >
                 {props.styleEditorContent}
               </Popover.Content>
@@ -121,10 +140,10 @@ export default function PlacedSprite(props: {
 
             <button
               class={cn(
-                "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
                 props.locked
-                  ? "bg-amber-500/15 text-amber-300/90"
-                  : "text-white/60 hover:bg-white/8 hover:text-white/90"
+                  ? "border-amber-400/18 bg-amber-500/15 text-amber-300/90"
+                  : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
               )}
               type="button"
               onPointerDown={(event) => event.stopPropagation()}
@@ -141,10 +160,10 @@ export default function PlacedSprite(props: {
 
             <button
               class={cn(
-                "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
                 props.locked
-                  ? "cursor-not-allowed text-white/20"
-                  : "text-white/60 hover:bg-rose-500/15 hover:text-rose-300"
+                  ? "cursor-not-allowed border-transparent text-white/20"
+                  : "border-transparent text-white/60 hover:border-rose-300/14 hover:bg-rose-500/15 hover:text-rose-300"
               )}
               type="button"
               onPointerDown={(event) => event.stopPropagation()}
@@ -168,44 +187,56 @@ export default function PlacedSprite(props: {
 
           <div
             class={cn(
-              "absolute size-3 left-0 top-0 -translate-x-px -translate-y-px border-l-2 border-t-2",
+              cornerHandleClass,
+              "left-0 top-0 -translate-x-1/2 -translate-y-1/2",
               props.locked ? "pointer-events-none opacity-35" : "cursor-nw-resize"
             )}
             onPointerDown={(event) => {
               event.stopPropagation();
               if (!props.locked) props.onResizeStart("nw", event);
             }}
-          />
+          >
+            <div class={cn(cornerHandleVisualClass, "border-l-2 border-t-2")} />
+          </div>
           <div
             class={cn(
-              "absolute size-3 left-0 top-0 right-0 translate-x-px -translate-y-px border-r-2 border-t-2",
-              props.locked ? "pointer-events-none opacity-35" : "cursor-se-resize"
+              cornerHandleClass,
+              "right-0 top-0 translate-x-1/2 -translate-y-1/2",
+              props.locked ? "pointer-events-none opacity-35" : "cursor-ne-resize"
             )}
             onPointerDown={(event) => {
               event.stopPropagation();
               if (!props.locked) props.onResizeStart("ne", event);
             }}
-          />
+          >
+            <div class={cn(cornerHandleVisualClass, "border-r-2 border-t-2")} />
+          </div>
           <div
             class={cn(
-              "absolute size-3 bottom-0 left-0 -translate-x-px translate-y-px border-b-2 border-l-2",
-              props.locked ? "pointer-events-none opacity-35" : "cursor-se-resize"
+              cornerHandleClass,
+              "bottom-0 left-0 -translate-x-1/2 translate-y-1/2",
+              props.locked ? "pointer-events-none opacity-35" : "cursor-sw-resize"
             )}
             onPointerDown={(event) => {
               event.stopPropagation();
               if (!props.locked) props.onResizeStart("sw", event);
             }}
-          />
+          >
+            <div class={cn(cornerHandleVisualClass, "border-b-2 border-l-2")} />
+          </div>
           <div
             class={cn(
-              "absolute size-3 bottom-0 right-0 translate-x-px translate-y-px border-b-2 border-r-2",
+              cornerHandleClass,
+              "bottom-0 right-0 translate-x-1/2 translate-y-1/2",
               props.locked ? "pointer-events-none opacity-35" : "cursor-se-resize"
             )}
             onPointerDown={(event) => {
               event.stopPropagation();
               if (!props.locked) props.onResizeStart("se", event);
             }}
-          />
+          >
+            <div class={cn(cornerHandleVisualClass, "border-b-2 border-r-2")} />
+          </div>
 
           {props.canResizeFreely && (
             <>

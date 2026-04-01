@@ -40,6 +40,8 @@ export default defineSchema({
     name: v.string(),
     width: v.number(),
     height: v.number(),
+    gridSize: v.optional(v.number()),
+    showGrid: v.optional(v.boolean()),
     isDefault: v.optional(v.boolean()),
   })
     .index("by_name", ["name"])
@@ -54,6 +56,7 @@ export default defineSchema({
     height: v.number(),
     zIndex: v.optional(v.number()),
     rotation: v.optional(v.number()),
+    opacity: v.optional(v.number()),
     locked: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),

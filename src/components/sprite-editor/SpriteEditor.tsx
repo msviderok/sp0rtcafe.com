@@ -8,8 +8,16 @@ import SceneCanvas from "./SceneCanvas";
 import SpriteSidebar from "./SpriteSidebar";
 import { isDrawerSpriteDragData, type DrawerSprite } from "./spriteDrag";
 
+const MIN_GRID_SIZE = 4;
+const MAX_GRID_SIZE = 64;
+const DEFAULT_GRID_SIZE = 32;
+
 function createSceneLabel(index: number) {
   return `scene-${index}`;
+}
+
+function normalizeGridSize(value: number) {
+  return Math.min(Math.max(value, MIN_GRID_SIZE), MAX_GRID_SIZE);
 }
 
 export default function SpriteEditor() {
@@ -23,8 +31,8 @@ export default function SpriteEditor() {
   const [sceneId, setSceneId] = createSignal<Id<"scenes">>();
   const [createName, setCreateName] = createSignal("");
   const [sceneName, setSceneName] = createSignal("");
-  const [gridSize, setGridSize] = createSignal(32);
-  const [showGrid, setShowGrid] = createSignal(true);
+  const [pendingGridSizes, setPendingGridSizes] = createSignal<Record<string, number>>({});
+  const [pendingShowGrid, setPendingShowGrid] = createSignal<Record<string, boolean>>({});
   const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
   const [isDraggingSprite, setIsDraggingSprite] = createSignal(false);
   const [isOverCanvas, setIsOverCanvas] = createSignal(false);
@@ -42,11 +50,52 @@ export default function SpriteEditor() {
   const selectedScene = createMemo(
     () => sortedScenes().find((scene) => scene._id === sceneId()) ?? null
   );
+  const gridSize = createMemo(() => {
+    const currentSceneId = sceneId();
+    if (currentSceneId) {
+      const pending = pendingGridSizes()[currentSceneId];
+      if (pending !== undefined) {
+        return pending;
+      }
+    }
+
+    return normalizeGridSize(selectedScene()?.gridSize ?? DEFAULT_GRID_SIZE);
+  });
+  const showGrid = createMemo(() => {
+    const currentSceneId = sceneId();
+    if (currentSceneId) {
+      const pending = pendingShowGrid()[currentSceneId];
+      if (pending !== undefined) {
+        return pending;
+      }
+    }
+
+    return selectedScene()?.showGrid ?? true;
+  });
 
   createEffect(() => {
     const currentScene = selectedScene();
     if (currentScene) {
       setSceneName(currentScene.name);
+      const currentGridSize = normalizeGridSize(currentScene.gridSize ?? DEFAULT_GRID_SIZE);
+      const pendingGridSize = pendingGridSizes()[currentScene._id];
+      if (pendingGridSize !== undefined && pendingGridSize === currentGridSize) {
+        setPendingGridSizes((current) => {
+          const next = { ...current };
+          delete next[currentScene._id];
+          return next;
+        });
+      }
+
+      const syncedShowGrid = currentScene.showGrid ?? true;
+      const pendingSceneShowGrid = pendingShowGrid()[currentScene._id];
+      if (pendingSceneShowGrid !== undefined && pendingSceneShowGrid === syncedShowGrid) {
+        setPendingShowGrid((current) => {
+          const next = { ...current };
+          delete next[currentScene._id];
+          return next;
+        });
+      }
     }
   });
 
@@ -109,6 +158,55 @@ export default function SpriteEditor() {
     await deleteScene.mutate({ sceneId: currentScene._id });
   };
 
+  const handleGridSizeChange = (value: number) => {
+    const currentSceneId = sceneId();
+    const nextGridSize = normalizeGridSize(value);
+    if (currentSceneId) {
+      setPendingGridSizes((current) => ({
+        ...current,
+        [currentSceneId]: nextGridSize,
+      }));
+    }
+  };
+
+  const handleGridSizeCommit = (value: number) => {
+    const currentSceneId = sceneId();
+    if (!currentSceneId) {
+      return;
+    }
+
+    const nextGridSize = normalizeGridSize(value);
+    setPendingGridSizes((current) => ({
+      ...current,
+      [currentSceneId]: nextGridSize,
+    }));
+
+    void updateScene.mutate({
+      sceneId: currentSceneId,
+      gridSize: nextGridSize,
+    });
+  };
+
+  const handleToggleGrid = () => {
+    const currentSceneId = sceneId();
+    const nextShowGrid = !showGrid();
+
+    if (currentSceneId) {
+      setPendingShowGrid((current) => ({
+        ...current,
+        [currentSceneId]: nextShowGrid,
+      }));
+
+      void updateScene.mutate({
+        sceneId: currentSceneId,
+        showGrid: nextShowGrid,
+      });
+      return;
+    }
+
+    setPendingShowGrid({});
+  };
+
   return (
     <Show
       when={!scenes.isLoading()}
@@ -161,8 +259,9 @@ export default function SpriteEditor() {
                 gridSize={gridSize()}
                 showGrid={showGrid()}
                 onOpenChange={setIsSidebarOpen}
-                onGridSizeChange={setGridSize}
-                onToggleGrid={() => setShowGrid((current) => !current)}
+                onGridSizeChange={handleGridSizeChange}
+                onGridSizeCommit={handleGridSizeCommit}
+                onToggleGrid={handleToggleGrid}
                 onSelectScene={(id) => {
                   setSceneId(id);
                 }}

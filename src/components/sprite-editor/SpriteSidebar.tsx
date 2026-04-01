@@ -78,6 +78,7 @@ export default function SpriteSidebar(props: {
 	showGrid: boolean;
 	onOpenChange: (value: boolean) => void;
 	onGridSizeChange: (value: number) => void;
+	onGridSizeCommit?: (value: number) => void;
 	onToggleGrid: () => void;
 	onSelectScene: (sceneId: Id<'scenes'>) => void;
 	onSceneNameChange: (value: string) => void;
@@ -348,7 +349,11 @@ export default function SpriteSidebar(props: {
 					<section class="border-b border-border px-3 py-3">
 						<div class="grid gap-3">
 							<div class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Canvas</div>
-							<GridSizeControl gridSize={props.gridSize} onChange={props.onGridSizeChange} />
+							<GridSizeControl
+								gridSize={props.gridSize}
+								onChange={props.onGridSizeChange}
+								onCommit={props.onGridSizeCommit}
+							/>
 							<button
 								class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
 								type="button"

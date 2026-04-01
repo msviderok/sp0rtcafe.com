@@ -157,7 +157,6 @@ body {
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    image-rendering: pixelated;
   }
   body {
     @apply bg-background text-foreground;

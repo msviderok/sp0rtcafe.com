@@ -1,5 +1,10 @@
-import SpriteEditor from "~/components/sprite-editor/SpriteEditor";
+import { clientOnly } from "@solidjs/start";
+import LoadingScreen from "~/components/LoadingScreen";
+
+const SpriteEditor = clientOnly(() => import("~/components/sprite-editor/SpriteEditor"), {
+  lazy: true,
+});
 
 export default function EditorPage() {
-  return <SpriteEditor />;
+  return <SpriteEditor fallback={<LoadingScreen label="Loading editor" />} />;
 }

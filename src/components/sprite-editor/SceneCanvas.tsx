@@ -39,6 +39,7 @@ type LocalTransform = {
   height: number;
   zIndex: number;
   rotation: number;
+  opacity: number;
   locked: boolean;
 };
 
@@ -51,6 +52,7 @@ type DeletedAssetSnapshot = {
   height: number;
   zIndex: number;
   rotation: number;
+  opacity: number;
   locked: boolean;
   bgRepeat?: string;
   bgPosition?: string;
@@ -75,8 +77,11 @@ type EditingAsset = {
   nextWidth: number;
   nextHeight: number;
   nextRotation: number;
+  nextOpacity: number;
   locked: boolean;
   canResizeFreely: boolean;
+  startScrollLeft: number;
+  startScrollTop: number;
 };
 
 type Marquee = { startX: number; startY: number; endX: number; endY: number };
@@ -85,6 +90,8 @@ type BulkMoveState = {
   startClientX: number;
   startClientY: number;
   startPositions: Record<string, { x: number; y: number }>;
+  startScrollLeft: number;
+  startScrollTop: number;
 };
 
 type BulkResizeState = {
@@ -93,6 +100,8 @@ type BulkResizeState = {
   startClientY: number;
   startBBox: { x: number; y: number; width: number; height: number };
   startSizes: Record<string, { x: number; y: number; width: number; height: number }>;
+  startScrollLeft: number;
+  startScrollTop: number;
 };
 
 export default function SceneCanvas(props: {
@@ -108,6 +117,7 @@ export default function SceneCanvas(props: {
   onDebugSnapshot?: DndDebugSnapshotReporter;
 }) {
   const showGrid = createMemo(() => props.showGrid || props.isDraggingSprite);
+  let scrollViewportRef: HTMLDivElement | undefined;
 
   return (
     <section class="flex min-w-0 flex-1 flex-col gap-4">
@@ -118,7 +128,10 @@ export default function SceneCanvas(props: {
         </div>
       </div>
 
-      <div class="overflow-auto">
+      <div
+        ref={scrollViewportRef}
+        class="overflow-auto [overflow-anchor:none]"
+      >
         <Show
           when={props.sceneId}
           fallback={<CanvasFrame gridSize={props.gridSize} showGrid={showGrid()} />}
@@ -128,6 +141,7 @@ export default function SceneCanvas(props: {
               sceneId={sceneId()}
               gridSize={props.gridSize}
               showGrid={showGrid()}
+              getScrollViewport={() => scrollViewportRef}
               onDragStateChange={props.onDragStateChange}
               onDropTargetChange={props.onDropTargetChange}
               debugEnabled={props.debugEnabled}
@@ -145,6 +159,7 @@ function CanvasWithScene(props: {
   sceneId: Id<"scenes">;
   gridSize: number;
   showGrid: boolean;
+  getScrollViewport: () => HTMLDivElement | undefined;
   onDragStateChange: (isDragging: boolean) => void;
   onDropTargetChange?: (isOver: boolean) => void;
   debugEnabled?: boolean;
@@ -176,12 +191,30 @@ function CanvasWithScene(props: {
   const [bulkMove, setBulkMove] = createSignal<BulkMoveState | null>(null);
   const [bulkResize, setBulkResize] = createSignal<BulkResizeState | null>(null);
   const [styleEditorAssetId, setStyleEditorAssetId] = createSignal<Id<"sceneAssets"> | null>(null);
+  const [hydratedStyleEditorAssetId, setHydratedStyleEditorAssetId] = createSignal<
+    Id<"sceneAssets"> | null
+  >(null);
   const [widthDraft, setWidthDraft] = createSignal("");
   const [heightDraft, setHeightDraft] = createSignal("");
   const [bgRepeatDraft, setBgRepeatDraft] = createSignal(DEFAULT_BG_REPEAT);
   const [bgPositionDraft, setBgPositionDraft] = createSignal("");
   const [bgSizeDraft, setBgSizeDraft] = createSignal(DEFAULT_BG_SIZE);
+  const [opacityDraft, setOpacityDraft] = createSignal("1");
   let assetsCountAtDrop = -1;
+  const restoreScrollViewport = (left: number, top: number) => {
+    const viewport = props.getScrollViewport();
+    if (!viewport) {
+      return;
+    }
+
+    if (viewport.scrollLeft !== left) {
+      viewport.scrollLeft = left;
+    }
+
+    if (viewport.scrollTop !== top) {
+      viewport.scrollTop = top;
+    }
+  };
 
   // Derived: single selected asset id (when exactly one selected)
   const singleSelectedId = createMemo(() => {
@@ -204,6 +237,18 @@ function CanvasWithScene(props: {
       return leftOrder - rightOrder || left._creationTime - right._creationTime;
     })
   );
+  const nextGhostZIndex = createMemo(() => {
+    const topAsset = orderedPlacedAssets().at(-1);
+    if (!topAsset) {
+      return 1;
+    }
+
+    return getAssetOrderValue(topAsset, localTransforms()[topAsset._id]) + 1;
+  });
+  const areSpriteActionsDisabled = createMemo(
+    () => editingAsset()?.mode === "resize" || bulkResize() !== null
+  );
+  const orderedPlacedAssetIds = createMemo(() => orderedPlacedAssets().map((asset) => asset._id));
   const styleEditorAsset = createMemo(() => {
     const assetId = styleEditorAssetId();
     if (!assetId) {
@@ -217,12 +262,13 @@ function CanvasWithScene(props: {
     const selectedId = singleSelectedId();
     if (!selectedId || styleEditorAssetId() !== selectedId) {
       setStyleEditorAssetId(null);
+      setHydratedStyleEditorAssetId(null);
     }
   });
 
   createEffect(() => {
     const current = styleEditorAsset();
-    if (!current) {
+    if (!current || hydratedStyleEditorAssetId() === current._id) {
       return;
     }
 
@@ -232,6 +278,8 @@ function CanvasWithScene(props: {
     setBgRepeatDraft(current.bgRepeat ?? current.sprite.bgRepeat ?? DEFAULT_BG_REPEAT);
     setBgPositionDraft(current.bgPosition ?? current.sprite.bgPosition ?? "");
     setBgSizeDraft(current.bgSize ?? current.sprite.bgSize ?? DEFAULT_BG_SIZE);
+    setOpacityDraft(String(view.opacity));
+    setHydratedStyleEditorAssetId(current._id);
   });
 
   createEffect(() => {
@@ -257,6 +305,7 @@ function CanvasWithScene(props: {
           local.height === asset.height &&
           local.zIndex === (asset.zIndex ?? asset._creationTime) &&
           local.rotation === (asset.rotation ?? 0) &&
+          local.opacity === (asset.opacity ?? 1) &&
           local.locked === (asset.locked ?? false)
         ) {
           delete next[asset._id];
@@ -473,6 +522,7 @@ function CanvasWithScene(props: {
     height: number;
     zIndex?: number;
     rotation?: number;
+    opacity?: number;
     locked?: boolean;
   }) => {
     const local = localTransforms()[asset._id];
@@ -483,6 +533,7 @@ function CanvasWithScene(props: {
       height: local?.height ?? asset.height,
       zIndex: local?.zIndex ?? asset.zIndex ?? asset._creationTime,
       rotation: local?.rotation ?? asset.rotation ?? 0,
+      opacity: local?.opacity ?? asset.opacity ?? 1,
       locked: local?.locked ?? asset.locked ?? false,
     };
   };
@@ -512,6 +563,7 @@ function CanvasWithScene(props: {
         height: view.height,
         zIndex: view.zIndex,
         rotation: view.rotation,
+        opacity: view.opacity,
         locked: view.locked,
         bgRepeat: asset.bgRepeat,
         bgPosition: asset.bgPosition,
@@ -554,6 +606,7 @@ function CanvasWithScene(props: {
       height: number;
       zIndex?: number;
       rotation?: number;
+      opacity?: number;
       locked?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
@@ -573,6 +626,7 @@ function CanvasWithScene(props: {
       height?: number;
       zIndex?: number;
       rotation?: number;
+      opacity?: number;
       locked?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
@@ -582,9 +636,10 @@ function CanvasWithScene(props: {
     const view = getAssetView(asset);
     const nextWidth = patch.width ?? view.width;
     const nextHeight = patch.height ?? view.height;
-    const nextX = clamp(patch.x ?? view.x, 0, Math.max(0, SCENE_WIDTH - nextWidth));
-    const nextY = clamp(patch.y ?? view.y, 0, Math.max(0, SCENE_HEIGHT - nextHeight));
+    const nextX = patch.x ?? view.x;
+    const nextY = patch.y ?? view.y;
     const nextRotation = patch.rotation ?? view.rotation;
+    const nextOpacity = clamp(patch.opacity ?? view.opacity, 0, 1);
     const nextLocked = patch.locked ?? view.locked;
     const nextZIndex = patch.zIndex ?? view.zIndex;
 
@@ -597,6 +652,7 @@ function CanvasWithScene(props: {
         height: nextHeight,
         zIndex: nextZIndex,
         rotation: nextRotation,
+        opacity: nextOpacity,
         locked: nextLocked,
       },
     }));
@@ -609,6 +665,7 @@ function CanvasWithScene(props: {
       height: nextHeight,
       zIndex: nextZIndex,
       rotation: nextRotation,
+      opacity: nextOpacity,
       locked: nextLocked,
       ...(patch.bgRepeat !== undefined ? { bgRepeat: patch.bgRepeat } : {}),
       ...(patch.bgPosition !== undefined ? { bgPosition: patch.bgPosition } : {}),
@@ -643,11 +700,47 @@ function CanvasWithScene(props: {
       return;
     }
 
+    const opacity = Number(opacityDraft().trim());
+
     await applyAssetPatch(asset, {
       bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
       bgPosition: bgPositionDraft().trim(),
       bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
+      opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
     });
+  };
+
+  const handleCommitStyleEditor = async () => {
+    const asset = styleEditorAsset();
+    if (!asset) {
+      return;
+    }
+
+    const opacity = Number(opacityDraft().trim());
+
+    const patch: {
+      width?: number;
+      height?: number;
+      opacity: number;
+      bgRepeat: string;
+      bgPosition: string;
+      bgSize: string;
+    } = {
+      bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
+      bgPosition: bgPositionDraft().trim(),
+      bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
+      opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
+    };
+
+    const width = Number(widthDraft().trim());
+    const height = Number(heightDraft().trim());
+
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      patch.width = snapToGrid(width, props.gridSize);
+      patch.height = snapToGrid(height, props.gridSize);
+    }
+
+    await applyAssetPatch(asset, patch);
   };
 
   const applyTilePreset = async (preset: "2x2" | "4x2" | "wall" | "ground" | "fill") => {
@@ -754,6 +847,7 @@ function CanvasWithScene(props: {
           height: local?.height ?? asset.height,
           zIndex: update.zIndex,
           rotation: local?.rotation ?? asset.rotation ?? 0,
+          opacity: local?.opacity ?? asset.opacity ?? 1,
           locked: local?.locked ?? asset.locked ?? false,
         };
       }
@@ -846,6 +940,7 @@ function CanvasWithScene(props: {
         height: local?.height ?? asset.height,
         zIndex: local?.zIndex ?? asset.zIndex ?? asset._creationTime,
         rotation: local?.rotation ?? asset.rotation ?? 0,
+        opacity: local?.opacity ?? asset.opacity ?? 1,
         locked: local?.locked ?? asset.locked ?? false,
       });
     };
@@ -861,13 +956,13 @@ function CanvasWithScene(props: {
       return;
     }
 
-    props.onDragStateChange(true);
-
     const handlePointerMove = (event: PointerEvent) => {
       setEditingAsset((previous) => {
         if (!previous) {
           return previous;
         }
+
+        restoreScrollViewport(previous.startScrollLeft, previous.startScrollTop);
 
         const deltaX = event.clientX - previous.startClientX;
         const deltaY = event.clientY - previous.startClientY;
@@ -875,16 +970,8 @@ function CanvasWithScene(props: {
         if (previous.mode === "move") {
           return {
             ...previous,
-            nextX: clamp(
-              snapToGrid(previous.startX + deltaX, props.gridSize),
-              0,
-              Math.max(0, SCENE_WIDTH - previous.startWidth)
-            ),
-            nextY: clamp(
-              snapToGrid(previous.startY + deltaY, props.gridSize),
-              0,
-              Math.max(0, SCENE_HEIGHT - previous.startHeight)
-            ),
+            nextX: snapToGrid(previous.startX + deltaX, props.gridSize),
+            nextY: snapToGrid(previous.startY + deltaY, props.gridSize),
           };
         }
 
@@ -922,10 +1009,32 @@ function CanvasWithScene(props: {
           previous.handle === "nw" || previous.handle === "ne" || previous.handle === "n"
             ? previous.startY + previous.startHeight
             : SCENE_HEIGHT - previous.startY;
+        const isCornerHandle =
+          previous.handle === "nw" ||
+          previous.handle === "ne" ||
+          previous.handle === "sw" ||
+          previous.handle === "se";
         let nextWidth: number;
         let nextHeight: number;
 
-        if (previous.canResizeFreely) {
+        if (isCornerHandle) {
+          const widthScale = widthCandidate / previous.startWidth;
+          const heightScale = heightCandidate / previous.startHeight;
+          const dominantScale =
+            Math.abs(widthScale - 1) > Math.abs(heightScale - 1) ? widthScale : heightScale;
+          const aspectRatio = previous.startWidth / previous.startHeight;
+          const minWidth = Math.max(props.gridSize, props.gridSize * aspectRatio);
+          const maxWidth = Math.max(
+            minWidth,
+            Math.min(maxWidthByBounds, maxHeightByBounds * aspectRatio)
+          );
+          nextWidth = clamp(
+            snapToGrid(previous.startWidth * dominantScale, props.gridSize),
+            minWidth,
+            maxWidth
+          );
+          nextHeight = Math.max(props.gridSize, Math.round(nextWidth / aspectRatio));
+        } else if (previous.canResizeFreely) {
           nextWidth = clamp(
             snapToGrid(widthCandidate, props.gridSize),
             props.gridSize,
@@ -978,7 +1087,6 @@ function CanvasWithScene(props: {
 
     const handlePointerUp = () => {
       const finalEdit = editingAsset();
-      props.onDragStateChange(false);
 
       if (finalEdit) {
         setLocalTransforms((current) => ({
@@ -993,6 +1101,7 @@ function CanvasWithScene(props: {
               placedAssets().find((asset) => asset._id === finalEdit.assetId)?.zIndex ??
               0,
             rotation: finalEdit.nextRotation,
+            opacity: finalEdit.nextOpacity,
             locked: finalEdit.locked,
           },
         }));
@@ -1004,6 +1113,7 @@ function CanvasWithScene(props: {
           width: finalEdit.nextWidth,
           height: finalEdit.nextHeight,
           rotation: finalEdit.nextRotation,
+          opacity: finalEdit.nextOpacity,
         });
       }
 
@@ -1016,7 +1126,6 @@ function CanvasWithScene(props: {
     onCleanup(() => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
-      props.onDragStateChange(false);
     });
   });
 
@@ -1087,11 +1196,11 @@ function CanvasWithScene(props: {
       return;
     }
 
-    props.onDragStateChange(true);
-
     const handlePointerMove = (event: PointerEvent) => {
       const current = bulkMove();
       if (!current) return;
+
+      restoreScrollViewport(current.startScrollLeft, current.startScrollTop);
 
       const deltaX = event.clientX - current.startClientX;
       const deltaY = event.clientY - current.startClientY;
@@ -1105,23 +1214,17 @@ function CanvasWithScene(props: {
           const width = local?.width ?? asset.width;
           const height = local?.height ?? asset.height;
           const rotation = local?.rotation ?? asset.rotation ?? 0;
+          const opacity = local?.opacity ?? asset.opacity ?? 1;
           const zIndex = local?.zIndex ?? asset.zIndex ?? asset._creationTime;
           const locked = local?.locked ?? asset.locked ?? false;
           next[id] = {
-            x: clamp(
-              snapToGrid(startPos.x + deltaX, props.gridSize),
-              0,
-              Math.max(0, SCENE_WIDTH - width)
-            ),
-            y: clamp(
-              snapToGrid(startPos.y + deltaY, props.gridSize),
-              0,
-              Math.max(0, SCENE_HEIGHT - height)
-            ),
+            x: snapToGrid(startPos.x + deltaX, props.gridSize),
+            y: snapToGrid(startPos.y + deltaY, props.gridSize),
             width,
             height,
             zIndex,
             rotation,
+            opacity,
             locked,
           };
         }
@@ -1131,7 +1234,6 @@ function CanvasWithScene(props: {
 
     const handlePointerUp = () => {
       const current = bulkMove();
-      props.onDragStateChange(false);
 
       if (current) {
         const transforms = localTransforms();
@@ -1149,6 +1251,7 @@ function CanvasWithScene(props: {
             height: local.height,
             zIndex: local.zIndex,
             rotation: local.rotation,
+            opacity: local.opacity,
           });
         }
       }
@@ -1162,7 +1265,6 @@ function CanvasWithScene(props: {
     onCleanup(() => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
-      props.onDragStateChange(false);
     });
   });
 
@@ -1171,11 +1273,11 @@ function CanvasWithScene(props: {
     const state = bulkResize();
     if (!state) return;
 
-    props.onDragStateChange(true);
-
     const handlePointerMove = (event: PointerEvent) => {
       const current = bulkResize();
       if (!current) return;
+
+      restoreScrollViewport(current.startScrollLeft, current.startScrollTop);
 
       const rawDeltaX = event.clientX - current.startClientX;
       const rawDeltaY = event.clientY - current.startClientY;
@@ -1212,7 +1314,17 @@ function CanvasWithScene(props: {
       // Uniform scale: pick dominant axis
       const scaleX = newBBoxWidth / startBBox.width;
       const scaleY = newBBoxHeight / startBBox.height;
-      const s = Math.max(0.05, Math.abs(rawDeltaX) >= Math.abs(rawDeltaY) ? scaleX : scaleY);
+      const minScale = Object.values(startSizes).reduce((largestMinScale, start) => {
+        return Math.max(
+          largestMinScale,
+          props.gridSize / start.width,
+          props.gridSize / start.height
+        );
+      }, 0);
+      const s = Math.max(
+        minScale,
+        Math.abs(rawDeltaX) >= Math.abs(rawDeltaY) ? scaleX : scaleY
+      );
 
       setLocalTransforms((prev) => {
         const next = { ...prev };
@@ -1221,6 +1333,7 @@ function CanvasWithScene(props: {
           if (!asset) continue;
           const local = prev[id];
           const rotation = local?.rotation ?? asset.rotation ?? 0;
+          const opacity = local?.opacity ?? asset.opacity ?? 1;
           const zIndex = local?.zIndex ?? asset.zIndex ?? asset._creationTime;
           const locked = local?.locked ?? asset.locked ?? false;
           next[id] = {
@@ -1230,6 +1343,7 @@ function CanvasWithScene(props: {
             height: Math.max(props.gridSize, Math.round(start.height * s)),
             zIndex,
             rotation,
+            opacity,
             locked,
           };
         }
@@ -1239,7 +1353,6 @@ function CanvasWithScene(props: {
 
     const handlePointerUp = () => {
       const current = bulkResize();
-      props.onDragStateChange(false);
       if (current) {
         const transforms = localTransforms();
         const all = placedAssets();
@@ -1256,6 +1369,7 @@ function CanvasWithScene(props: {
             height: local.height,
             zIndex: local.zIndex,
             rotation: local.rotation,
+            opacity: local.opacity,
           });
         }
       }
@@ -1268,7 +1382,6 @@ function CanvasWithScene(props: {
     onCleanup(() => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
-      props.onDragStateChange(false);
     });
   });
 
@@ -1280,6 +1393,7 @@ function CanvasWithScene(props: {
       width: number;
       height: number;
       rotation?: number;
+      opacity?: number;
       locked?: boolean;
       bgRepeat?: string;
       sprite?: { bgRepeat?: string };
@@ -1295,6 +1409,7 @@ function CanvasWithScene(props: {
 
     const centerX = asset.x + asset.width / 2;
     const centerY = asset.y + asset.height / 2;
+    const viewport = props.getScrollViewport();
 
     setEditingAsset({
       assetId: asset._id,
@@ -1314,7 +1429,10 @@ function CanvasWithScene(props: {
       nextWidth: asset.width,
       nextHeight: asset.height,
       nextRotation: asset.rotation ?? 0,
+      nextOpacity: asset.opacity ?? 1,
       locked: asset.locked ?? false,
+      startScrollLeft: viewport?.scrollLeft ?? 0,
+      startScrollTop: viewport?.scrollTop ?? 0,
       canResizeFreely:
         mode === "resize" &&
         !!asset.sprite &&
@@ -1345,10 +1463,13 @@ function CanvasWithScene(props: {
         y: local?.y ?? asset.y,
       };
     }
+    const viewport = props.getScrollViewport();
     setBulkMove({
       startClientX: event.clientX,
       startClientY: event.clientY,
       startPositions,
+      startScrollLeft: viewport?.scrollLeft ?? 0,
+      startScrollTop: viewport?.scrollTop ?? 0,
     });
   };
 
@@ -1392,12 +1513,15 @@ function CanvasWithScene(props: {
       if (view.locked) continue;
       startSizes[id] = { x: view.x, y: view.y, width: view.width, height: view.height };
     }
+    const viewport = props.getScrollViewport();
     setBulkResize({
       handle,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startBBox: bbox,
       startSizes,
+      startScrollLeft: viewport?.scrollLeft ?? 0,
+      startScrollTop: viewport?.scrollTop ?? 0,
     });
   };
 
@@ -1508,6 +1632,7 @@ function CanvasWithScene(props: {
               top: `${ghost().y}px`,
               width: `${ghost().sprite.width}px`,
               height: `${ghost().sprite.height}px`,
+              "z-index": nextGhostZIndex(),
             }}
           >
             <div
@@ -1527,70 +1652,97 @@ function CanvasWithScene(props: {
           <div class="absolute left-6 top-6 text-sm text-muted-foreground">Loading scene...</div>
         }
       >
-        <For each={orderedPlacedAssets()}>
-          {(asset) =>
+        <For each={orderedPlacedAssetIds()}>
+          {(assetId) =>
             (() => {
-              const currentEdit = createMemo(() =>
-                editingAsset()?.assetId === asset._id ? editingAsset() : null
+              const asset = createMemo(() =>
+                placedAssets().find((item) => item._id === assetId) ??
+                orderedPlacedAssets().find((item) => item._id === assetId)
               );
-              const localTransform = createMemo(() => localTransforms()[asset._id]);
-              const view = createMemo(() => ({
-                x: currentEdit()?.nextX ?? localTransform()?.x ?? asset.x,
-                y: currentEdit()?.nextY ?? localTransform()?.y ?? asset.y,
-                width: currentEdit()?.nextWidth ?? localTransform()?.width ?? asset.width,
-                height: currentEdit()?.nextHeight ?? localTransform()?.height ?? asset.height,
-                zIndex: localTransform()?.zIndex ?? asset.zIndex ?? asset._creationTime,
-                rotation:
-                  currentEdit()?.nextRotation ?? localTransform()?.rotation ?? asset.rotation ?? 0,
-                locked: localTransform()?.locked ?? asset.locked ?? false,
-              }));
+              const currentEdit = createMemo(() =>
+                editingAsset()?.assetId === assetId ? editingAsset() : null
+              );
+              const localTransform = createMemo(() => localTransforms()[assetId]);
+              const view = createMemo(() => {
+                const currentAsset = asset();
+                if (!currentAsset) {
+                  return null;
+                }
+
+                return {
+                  x: currentEdit()?.nextX ?? localTransform()?.x ?? currentAsset.x,
+                  y: currentEdit()?.nextY ?? localTransform()?.y ?? currentAsset.y,
+                  width: currentEdit()?.nextWidth ?? localTransform()?.width ?? currentAsset.width,
+                  height:
+                    currentEdit()?.nextHeight ?? localTransform()?.height ?? currentAsset.height,
+                  zIndex:
+                    localTransform()?.zIndex ??
+                    currentAsset.zIndex ??
+                    currentAsset._creationTime,
+                  rotation:
+                    currentEdit()?.nextRotation ??
+                    localTransform()?.rotation ??
+                    currentAsset.rotation ??
+                    0,
+                  opacity:
+                    currentEdit()?.nextOpacity ??
+                    localTransform()?.opacity ??
+                    currentAsset.opacity ??
+                    1,
+                  locked: localTransform()?.locked ?? currentAsset.locked ?? false,
+                };
+              });
 
               const selectionMode = createMemo(() => {
                 const ids = selectedAssetIds();
-                if (!ids.has(asset._id)) return "none" as const;
+                if (!ids.has(assetId)) return "none" as const;
                 if (ids.size === 1) return "single" as const;
                 return "multi" as const;
               });
 
               return (
-                <PlacedSprite
-                  sprite={{
-                    url: asset.sprite.url,
-                    width: view().width,
-                    height: view().height,
-                    bgRepeat: asset.bgRepeat ?? asset.sprite.bgRepeat,
-                    bgPosition: asset.bgPosition ?? asset.sprite.bgPosition,
-                    bgSize: asset.bgSize ?? asset.sprite.bgSize,
-                  }}
-                  x={view().x}
-                  y={view().y}
-                  zIndex={view().zIndex}
-                  rotation={view().rotation}
-                  locked={view().locked}
-                  canResizeFreely={canAssetResizeFreely(asset)}
-                  selectionMode={selectionMode()}
-                  isStyleEditorOpen={styleEditorAssetId() === asset._id}
-                  styleEditorContent={
-                    <Show when={styleEditorAssetId() === asset._id ? asset : null}>
-                      {(a) => (
-                        <div class="flex flex-col gap-2">
+                <Show when={asset() && view()}>
+                  {() => (
+                    <PlacedSprite
+                      sprite={{
+                        url: asset()!.sprite.url,
+                        width: view()!.width,
+                        height: view()!.height,
+                        opacity: view()!.opacity,
+                        bgRepeat: asset()!.bgRepeat ?? asset()!.sprite.bgRepeat,
+                        bgPosition: asset()!.bgPosition ?? asset()!.sprite.bgPosition,
+                        bgSize: asset()!.bgSize ?? asset()!.sprite.bgSize,
+                      }}
+                      x={view()!.x}
+                      y={view()!.y}
+                      zIndex={view()!.zIndex}
+                      rotation={view()!.rotation}
+                      locked={view()!.locked}
+                      canResizeFreely={canAssetResizeFreely(asset()!)}
+                      selectionMode={selectionMode()}
+                      actionsDisabled={areSpriteActionsDisabled()}
+                      isStyleEditorOpen={styleEditorAssetId() === assetId}
+                      styleEditorContent={
+                        <Show when={styleEditorAssetId() === assetId ? asset() : null}>
+                          {(a) => (
+                        <div class="flex flex-col gap-2.5">
                           <div class="flex items-start gap-2.5">
                             <div
-                              class="size-9 shrink-0 rounded-md border border-white/8 bg-white/5 bg-contain bg-center bg-no-repeat"
+                              class="size-10 shrink-0 rounded-xl border border-white/10 bg-white/6 bg-contain bg-center bg-no-repeat shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md"
                               style={{ "background-image": `url(${a().sprite.url})` }}
                             />
                             <div class="min-w-0">
                               <div class="truncate text-[13px] font-medium leading-tight">
                                 {a().sprite.key}
                               </div>
-                              <div class="mt-0.5 text-[10px] tabular-nums text-white/35">
+                              <div class="mt-0.5 text-[10px] tabular-nums text-white/40">
                                 {getAssetView(a()).width} x {getAssetView(a()).height} · layer{" "}
                                 {getAssetView(a()).zIndex}
                               </div>
                             </div>
                           </div>
 
-                          <div class="h-px bg-white/6" />
+                          <div class="h-px bg-white/8" />
 
                           <div class="flex flex-col gap-1">
                             <div class="text-[10px] uppercase tracking-widest text-white/30">
@@ -1600,8 +1752,9 @@ function CanvasWithScene(props: {
                               <For each={["2x2", "4x2", "fill", "wall", "ground"] as const}>
                                 {(preset) => (
                                   <button
-                                    class="rounded-md bg-white/4 px-2.5 py-1 text-[11px] text-white/65 transition hover:bg-white/10 hover:text-white active:scale-95"
+                                    class="rounded-sm border border-white/8 bg-white/6 px-2.5 py-1 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/12 hover:text-white active:scale-95"
                                     type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => void applyTilePreset(preset)}
                                   >
                                     {preset[0].toUpperCase() + preset.slice(1)}
@@ -1611,34 +1764,37 @@ function CanvasWithScene(props: {
                             </div>
                           </div>
 
-                          <div class="h-px bg-white/6" />
+                          <div class="h-px bg-white/8" />
 
-                          <div class="flex gap-1">
+                          <div class="flex flex-col gap-1">
                             <div class="text-[10px] uppercase tracking-widest text-white/30">
                               Size
                             </div>
-                            <div class="flex gap-1">
-                              <label class="text-[10px] text-white/40">
-                                W
+                            <div class="flex gap-1 items-center">
+                              <label class="text-[10px] text-white/40 w-auto">
                                 <input
-                                  class="h-7 rounded-sm border border-white/6 bg-white/4 px-2 text-xs tabular-nums text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
+                                  class="h-7 w-[56px] rounded-lg border border-white/8 bg-white/6 px-2 text-xs tabular-nums text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
                                   value={widthDraft()}
                                   inputmode="numeric"
+                                  placeholder="W"
                                   onInput={(event) => setWidthDraft(event.currentTarget.value)}
+                                  onBlur={() => void handleCommitStyleEditor()}
                                 />
                               </label>
-                              <label class="grid gap-0.5 text-[10px] text-white/40">
-                                H
+                              <label class="text-[10px] text-white/40 w-auto">
                                 <input
-                                  class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs tabular-nums text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
+                                  class="h-7 w-[56px] rounded-lg border border-white/8 bg-white/6 px-2 text-xs tabular-nums text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
                                   value={heightDraft()}
                                   inputmode="numeric"
+                                  placeholder="H"
                                   onInput={(event) => setHeightDraft(event.currentTarget.value)}
+                                  onBlur={() => void handleCommitStyleEditor()}
                                 />
                               </label>
                               <button
-                                class="h-7 rounded-md bg-white/8 px-2.5 text-[11px] text-white/65 transition hover:bg-white/15 hover:text-white active:scale-95"
+                                class="h-7 rounded-lg border border-white/8 bg-white/8 px-2.5 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/14 hover:text-white active:scale-95"
                                 type="button"
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => void handleApplyAssetSize()}
                               >
                                 Apply
@@ -1646,7 +1802,7 @@ function CanvasWithScene(props: {
                             </div>
                           </div>
 
-                          <div class="h-px bg-white/6" />
+                          <div class="h-px bg-white/8" />
 
                           <div class="grid gap-1">
                             <div class="text-[10px] uppercase tracking-widest text-white/30">
@@ -1654,9 +1810,13 @@ function CanvasWithScene(props: {
                             </div>
                             <div class="grid gap-1.5">
                               <select
-                                class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs text-white outline-none transition focus:border-white/20 focus:bg-white/6"
+                                class="h-8 rounded-xl border border-white/8 bg-white/6 px-2.5 text-xs text-white outline-none transition focus:border-white/16 focus:bg-white/10"
                                 value={bgRepeatDraft()}
-                                onChange={(event) => setBgRepeatDraft(event.currentTarget.value)}
+                                onChange={(event) => {
+                                  setBgRepeatDraft(event.currentTarget.value);
+                                  void handleCommitStyleEditor();
+                                }}
+                                onBlur={() => void handleCommitStyleEditor()}
                               >
                                 <option value="no-repeat">no-repeat</option>
                                 <option value="repeat">repeat</option>
@@ -1665,31 +1825,45 @@ function CanvasWithScene(props: {
                                 <option value="space">space</option>
                                 <option value="round">round</option>
                               </select>
-                              <div class="grid grid-cols-2 gap-1.5">
-                                <label class="grid gap-0.5 text-[10px] text-white/40">
+                              <div class="flex flex-col gap-1">
+                                <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
                                   Position
                                   <input
-                                    class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
+                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
                                     value={bgPositionDraft()}
                                     placeholder="center"
                                     onInput={(event) =>
                                       setBgPositionDraft(event.currentTarget.value)
                                     }
+                                    onBlur={() => void handleCommitStyleEditor()}
                                   />
                                 </label>
-                                <label class="grid gap-0.5 text-[10px] text-white/40">
+                                <label class="text-[10px] text-white/40 w-auto">
                                   Size
                                   <input
-                                    class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
+                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
                                     value={bgSizeDraft()}
                                     placeholder={DEFAULT_BG_SIZE}
                                     onInput={(event) => setBgSizeDraft(event.currentTarget.value)}
+                                    onBlur={() => void handleCommitStyleEditor()}
+                                  />
+                                </label>
+                                <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
+                                  Opacity
+                                  <input
+                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
+                                    value={opacityDraft()}
+                                    inputmode="decimal"
+                                    placeholder="1"
+                                    onInput={(event) => setOpacityDraft(event.currentTarget.value)}
+                                    onBlur={() => void handleCommitStyleEditor()}
                                   />
                                 </label>
                               </div>
                               <button
-                                class="h-7 rounded-md bg-white/8 px-2.5 text-[11px] text-white/65 transition hover:bg-white/15 hover:text-white active:scale-95"
+                                class="h-7 rounded-lg border border-white/8 bg-white/8 px-2.5 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/14 hover:text-white active:scale-95"
                                 type="button"
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => void handleSaveAssetStyle()}
                               >
                                 Save style
@@ -1697,99 +1871,102 @@ function CanvasWithScene(props: {
                             </div>
                           </div>
                         </div>
-                      )}
-                    </Show>
-                  }
-                  onSelect={(event) => {
-                    if (event.shiftKey) {
-                      // Shift+click: toggle in/out of multi-select
-                      setSelectedAssetIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(asset._id)) {
-                          next.delete(asset._id);
+                          )}
+                        </Show>
+                      }
+                      onSelect={(event) => {
+                        if (event.shiftKey) {
+                          // Shift+click: toggle in/out of multi-select
+                          setSelectedAssetIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(assetId)) {
+                              next.delete(assetId);
+                            } else {
+                              next.add(assetId);
+                            }
+                            return next;
+                          });
+                        } else if (selectedAssetIds().size > 1 && selectedAssetIds().has(assetId)) {
+                          // Already in multi-select: keep selection (bulk move will be initiated)
                         } else {
-                          next.add(asset._id);
+                          // Single select
+                          setSelectedAssetIds(new Set([assetId]));
                         }
-                        return next;
-                      });
-                    } else if (selectedAssetIds().size > 1 && selectedAssetIds().has(asset._id)) {
-                      // Already in multi-select: keep selection (bulk move will be initiated)
-                    } else {
-                      // Single select
-                      setSelectedAssetIds(new Set([asset._id]));
-                    }
-                  }}
-                  onMoveStart={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    const ids = selectedAssetIds();
-                    if (ids.size > 1 && ids.has(asset._id)) {
-                      // Bulk move
-                      startBulkMove(event);
-                    } else {
-                      setSelectedAssetIds(new Set([asset._id]));
-                      startEdit(
-                        {
-                          ...asset,
-                          ...view(),
-                        },
-                        "move",
-                        event
-                      );
-                    }
-                  }}
-                  onResizeStart={(handle, event) => {
-                    event.preventDefault();
-                    setSelectedAssetIds(new Set([asset._id]));
-                    startEdit(
-                      {
-                        ...asset,
-                        ...view(),
-                      },
-                      "resize",
-                      event,
-                      handle
-                    );
-                  }}
-                  onRotateStart={(event) => {
-                    event.preventDefault();
-                    setSelectedAssetIds(new Set([asset._id]));
-                    startEdit(
-                      {
-                        ...asset,
-                        ...view(),
-                      },
-                      "rotate",
-                      event
-                    );
-                  }}
-                  onDelete={() => {
-                    deleteAsset(asset, view());
-                  }}
-                  onToggleLock={() => {
-                    const nextLocked = !view().locked;
-                    setLocalTransforms((current) => ({
-                      ...current,
-                      [asset._id]: {
-                        x: view().x,
-                        y: view().y,
-                        width: view().width,
-                        height: view().height,
-                        zIndex: view().zIndex,
-                        rotation: view().rotation,
-                        locked: nextLocked,
-                      },
-                    }));
-                    void updateAsset.mutate({
-                      assetId: asset._id,
-                      locked: nextLocked,
-                    });
-                  }}
-                  onToggleStyleEditor={() => {
-                    setSelectedAssetIds(new Set([asset._id]));
-                    setStyleEditorAssetId((current) => (current === asset._id ? null : asset._id));
-                  }}
-                />
+                      }}
+                      onMoveStart={(event) => {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        const ids = selectedAssetIds();
+                        if (ids.size > 1 && ids.has(assetId)) {
+                          // Bulk move
+                          startBulkMove(event);
+                        } else {
+                          setSelectedAssetIds(new Set([assetId]));
+                          startEdit(
+                            {
+                              ...asset()!,
+                              ...view()!,
+                            },
+                            "move",
+                            event
+                          );
+                        }
+                      }}
+                      onResizeStart={(handle, event) => {
+                        event.preventDefault();
+                        setSelectedAssetIds(new Set([assetId]));
+                        startEdit(
+                          {
+                            ...asset()!,
+                            ...view()!,
+                          },
+                          "resize",
+                          event,
+                          handle
+                        );
+                      }}
+                      onRotateStart={(event) => {
+                        event.preventDefault();
+                        setSelectedAssetIds(new Set([assetId]));
+                        startEdit(
+                          {
+                            ...asset()!,
+                            ...view()!,
+                          },
+                          "rotate",
+                          event
+                        );
+                      }}
+                      onDelete={() => {
+                        deleteAsset(asset()!, view()!);
+                      }}
+                      onToggleLock={() => {
+                        const nextLocked = !view()!.locked;
+                        setLocalTransforms((current) => ({
+                          ...current,
+                          [assetId]: {
+                            x: view()!.x,
+                            y: view()!.y,
+                            width: view()!.width,
+                            height: view()!.height,
+                            zIndex: view()!.zIndex,
+                            rotation: view()!.rotation,
+                            opacity: view()!.opacity,
+                            locked: nextLocked,
+                          },
+                        }));
+                        void updateAsset.mutate({
+                          assetId,
+                          locked: nextLocked,
+                        });
+                      }}
+                      onToggleStyleEditor={() => {
+                        setSelectedAssetIds(new Set([assetId]));
+                        setStyleEditorAssetId((current) => (current === assetId ? null : assetId));
+                      }}
+                    />
+                  )}
+                </Show>
               );
             })()
           }
@@ -1817,10 +1994,10 @@ function CanvasFrame(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <GridOverlay gridSize={props.gridSize} visible={props.showGrid} />
       <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
       <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
       {props.children}
+      <GridOverlay gridSize={props.gridSize} visible={props.showGrid} />
     </div>
   );
 }

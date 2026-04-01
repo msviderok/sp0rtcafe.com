@@ -19,6 +19,22 @@ function getAssetOrderValue(asset: { zIndex?: number; _creationTime: number }) {
   return asset.zIndex ?? asset._creationTime;
 }
 
+function sortSceneAssetsByOrder<T extends { zIndex?: number; _creationTime: number }>(assets: T[]) {
+  return [...assets].sort(
+    (left, right) =>
+      getAssetOrderValue(left) - getAssetOrderValue(right) ||
+      left._creationTime - right._creationTime,
+  );
+}
+
+function normalizeOpacity(opacity?: number) {
+  if (opacity === undefined || Number.isNaN(opacity)) {
+    return 1;
+  }
+
+  return Math.min(1, Math.max(0, opacity));
+}
+
 export const listByScene = query({
   args: { sceneId: v.id("scenes") },
   handler: async (ctx, args) => {
@@ -38,6 +54,7 @@ export const listByScene = query({
           ...asset,
           zIndex: getAssetOrderValue(asset),
           rotation: asset.rotation ?? 0,
+          opacity: normalizeOpacity(asset.opacity),
           locked: asset.locked ?? false,
           sprite,
         };
@@ -68,10 +85,15 @@ export const place = mutation({
       .query("sceneAssets")
       .withIndex("by_sceneId", (q) => q.eq("sceneId", args.sceneId))
       .take(500);
-    const maxZIndex = sceneAssets.reduce(
-      (currentMax, asset) => Math.max(currentMax, getAssetOrderValue(asset)),
-      0,
-    );
+    const orderedSceneAssets = sortSceneAssetsByOrder(sceneAssets);
+
+    for (const [index, asset] of orderedSceneAssets.entries()) {
+      const nextZIndex = index + 1;
+      if (asset.zIndex !== nextZIndex) {
+        await ctx.db.patch(asset._id, { zIndex: nextZIndex });
+      }
+    }
+
     const size = getMeaningfulSpriteSize(sprite);
 
     return await ctx.db.insert("sceneAssets", {
@@ -81,8 +103,9 @@ export const place = mutation({
       y: args.y,
       width: size.width,
       height: size.height,
-      zIndex: maxZIndex + 1,
+      zIndex: orderedSceneAssets.length + 1,
       rotation: 0,
+      opacity: 1,
       locked: false,
     });
   },
@@ -97,6 +120,7 @@ export const update = mutation({
     height: v.optional(v.number()),
     zIndex: v.optional(v.number()),
     rotation: v.optional(v.number()),
+    opacity: v.optional(v.number()),
     locked: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
@@ -116,6 +140,7 @@ export const update = mutation({
       height?: number;
       zIndex?: number;
       rotation?: number;
+      opacity?: number;
       locked?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
@@ -139,6 +164,9 @@ export const update = mutation({
     }
     if (args.rotation !== undefined) {
       patch.rotation = args.rotation;
+    }
+    if (args.opacity !== undefined) {
+      patch.opacity = normalizeOpacity(args.opacity);
     }
     if (args.locked !== undefined) {
       patch.locked = args.locked;
@@ -182,6 +210,7 @@ export const restore = mutation({
     height: v.number(),
     zIndex: v.number(),
     rotation: v.number(),
+    opacity: v.number(),
     locked: v.boolean(),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),

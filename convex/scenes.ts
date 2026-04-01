@@ -5,10 +5,23 @@ import { mutation, query } from "./_generated/server";
 
 const DEFAULT_SCENE_WIDTH = 1920;
 const DEFAULT_SCENE_HEIGHT = 1000;
+const DEFAULT_GRID_SIZE = 32;
+const MIN_GRID_SIZE = 4;
+const MAX_GRID_SIZE = 64;
+
+function normalizeGridSize(gridSize?: number) {
+  if (typeof gridSize !== "number" || !Number.isFinite(gridSize)) {
+    return DEFAULT_GRID_SIZE;
+  }
+
+  return Math.min(Math.max(gridSize, MIN_GRID_SIZE), MAX_GRID_SIZE);
+}
 
 function normalizeScene(scene: Doc<"scenes">) {
   return {
     ...scene,
+    gridSize: normalizeGridSize(scene.gridSize),
+    showGrid: scene.showGrid ?? true,
     isDefault: scene.isDefault ?? false,
   };
 }
@@ -96,6 +109,8 @@ export const ensureStarterScene = mutation({
       name: "main",
       width: DEFAULT_SCENE_WIDTH,
       height: DEFAULT_SCENE_HEIGHT,
+      gridSize: DEFAULT_GRID_SIZE,
+      showGrid: true,
       isDefault: true,
     });
   },
@@ -111,6 +126,8 @@ export const create = mutation({
       name: args.name.trim() || "untitled",
       width: DEFAULT_SCENE_WIDTH,
       height: DEFAULT_SCENE_HEIGHT,
+      gridSize: DEFAULT_GRID_SIZE,
+      showGrid: true,
       isDefault: scenes.length === 0,
     });
 
@@ -122,6 +139,8 @@ export const update = mutation({
   args: {
     sceneId: v.id("scenes"),
     name: v.optional(v.string()),
+    gridSize: v.optional(v.number()),
+    showGrid: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const scene = await ctx.db.get(args.sceneId);
@@ -130,10 +149,18 @@ export const update = mutation({
       throw new Error("Scene not found");
     }
 
-    const patch: { name?: string } = {};
+    const patch: { name?: string; gridSize?: number; showGrid?: boolean } = {};
 
     if (args.name !== undefined) {
       patch.name = args.name.trim() || "untitled";
+    }
+
+    if (args.gridSize !== undefined) {
+      patch.gridSize = normalizeGridSize(args.gridSize);
+    }
+
+    if (args.showGrid !== undefined) {
+      patch.showGrid = args.showGrid;
     }
 
     await ctx.db.patch(args.sceneId, patch);

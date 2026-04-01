@@ -13,10 +13,28 @@ function PopoverTrigger(props: PopoverPrimitive.Trigger.Props) {
 
 function PopoverContent(
   props: PopoverPrimitive.Popup.Props &
-    Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">
+    Pick<
+      PopoverPrimitive.Positioner.Props,
+      | "align"
+      | "alignOffset"
+      | "side"
+      | "sideOffset"
+      | "positionMethod"
+      | "collisionBoundary"
+      | "collisionPadding"
+      | "sticky"
+      | "trackAnchor"
+      | "collisionAvoidance"
+    >
 ) {
   const mergedProps = mergeProps(
-    { align: "center" as const, alignOffset: 0, side: "bottom" as const, sideOffset: 4 },
+    {
+      align: "center" as const,
+      alignOffset: 0,
+      side: "bottom" as const,
+      sideOffset: 4,
+      positionMethod: "absolute" as const,
+    },
     props
   );
   const [local, rest] = splitProps(mergedProps, [
@@ -25,6 +43,12 @@ function PopoverContent(
     "alignOffset",
     "side",
     "sideOffset",
+    "positionMethod",
+    "collisionBoundary",
+    "collisionPadding",
+    "sticky",
+    "trackAnchor",
+    "collisionAvoidance",
   ]);
   return (
     <PopoverPrimitive.Portal>
@@ -33,6 +57,12 @@ function PopoverContent(
         alignOffset={local.alignOffset}
         side={local.side}
         sideOffset={local.sideOffset}
+        positionMethod={local.positionMethod}
+        collisionBoundary={local.collisionBoundary}
+        collisionPadding={local.collisionPadding}
+        sticky={local.sticky}
+        trackAnchor={local.trackAnchor}
+        collisionAvoidance={local.collisionAvoidance}
         class="isolate z-50"
       >
         <PopoverPrimitive.Popup
