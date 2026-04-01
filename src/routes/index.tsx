@@ -1,5 +1,5 @@
-import MainScreen from '~/components/MainScreen';
+import SceneLanding from '~/components/SceneLanding';
 
 export default function Home() {
-	return <MainScreen />;
+	return <SceneLanding />;
 }

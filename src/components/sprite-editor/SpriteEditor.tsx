@@ -1,7 +1,7 @@
 import { DragDropManager } from '@dnd-kit/dom';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/solid';
-import { useMutation } from 'convex-solidjs';
-import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { useMutation, useQuery } from 'convex-solidjs';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import type { DndDebugSnapshot } from './dndDebug';
@@ -9,10 +9,21 @@ import SceneCanvas from './SceneCanvas';
 import SpriteSidebar from './SpriteSidebar';
 import { isDrawerSpriteDragData, type DrawerSprite } from './spriteDrag';
 
+function createSceneLabel(index: number) {
+	return `scene-${index}`;
+}
+
 export default function SpriteEditor() {
 	const dragDropManager = new DragDropManager();
-	const ensureScene = useMutation(api.scenes.ensure);
+	const ensureStarterScene = useMutation(api.scenes.ensureStarterScene);
+	const createScene = useMutation(api.scenes.create);
+	const updateScene = useMutation(api.scenes.update);
+	const deleteScene = useMutation(api.scenes.remove);
+	const setDefaultScene = useMutation(api.scenes.setDefault);
+	const scenes = useQuery(api.scenes.list, {});
 	const [sceneId, setSceneId] = createSignal<Id<'scenes'>>();
+	const [createName, setCreateName] = createSignal('');
+	const [sceneName, setSceneName] = createSignal('');
 	const [gridSize, setGridSize] = createSignal(32);
 	const [showGrid, setShowGrid] = createSignal(true);
 	const [isDraggingSprite, setIsDraggingSprite] = createSignal(false);
@@ -25,6 +36,19 @@ export default function SpriteEditor() {
 		hookDragging: 'idle',
 	});
 	const [debugLog, setDebugLog] = createSignal<string[]>([]);
+
+	const sortedScenes = createMemo(() =>
+		[...(scenes.data() ?? [])].sort((left, right) => {
+			if (left.isDefault !== right.isDefault) {
+				return left.isDefault ? -1 : 1;
+			}
+
+			return left.name.localeCompare(right.name);
+		}),
+	);
+	const selectedScene = createMemo(() =>
+		sortedScenes().find((scene) => scene._id === sceneId()) ?? null,
+	);
 
 	const updateDebugSnapshot = (next: DndDebugSnapshot) => {
 		setDebugSnapshot((current) => ({
@@ -49,25 +73,69 @@ export default function SpriteEditor() {
 		console.info('[dnd-debug]', event, detail ?? '');
 	};
 
+	createEffect(() => {
+		const currentScene = selectedScene();
+		if (currentScene) {
+			setSceneName(currentScene.name);
+		}
+	});
+
+	createEffect(() => {
+		const currentSceneId = sceneId();
+		const availableScenes = sortedScenes();
+
+		if (currentSceneId && availableScenes.some((scene) => scene._id === currentSceneId)) {
+			return;
+		}
+
+		if (availableScenes[0]) {
+			setSceneId(availableScenes[0]._id);
+			updateDebugSnapshot({ sceneId: availableScenes[0]._id });
+		}
+	});
+
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
 		const fromQuery = params.get('dndDebug') === '1';
 		const fromStorage = window.localStorage.getItem('sprite-editor:dnd-debug') === '1';
 		setDebugEnabled(fromQuery || fromStorage);
 
-		void ensureScene
-			.mutate({
-				name: 'main',
-				width: 1920,
-				height: 1000,
-			})
-			.then((id) => {
-				setSceneId(id);
-				updateDebugSnapshot({ sceneId: id });
-			});
+		void ensureStarterScene.mutate({}).then((id) => {
+			setSceneId(id);
+			updateDebugSnapshot({ sceneId: id });
+		});
 	});
 
 	onCleanup(() => dragDropManager.destroy());
+
+	const handleCreateScene = async () => {
+		const name = createName().trim() || createSceneLabel(sortedScenes().length + 1);
+		const id = await createScene.mutate({ name });
+		setCreateName('');
+		setSceneId(id);
+		updateDebugSnapshot({ sceneId: id });
+	};
+
+	const handleRenameScene = async () => {
+		const currentScene = selectedScene();
+		if (!currentScene) {
+			return;
+		}
+
+		await updateScene.mutate({
+			sceneId: currentScene._id,
+			name: sceneName(),
+		});
+	};
+
+	const handleDeleteScene = async () => {
+		const currentScene = selectedScene();
+		if (!currentScene) {
+			return;
+		}
+
+		await deleteScene.mutate({ sceneId: currentScene._id });
+	};
 
 	return (
 		<DragDropProvider
@@ -169,8 +237,99 @@ export default function SpriteEditor() {
 				</Show>
 
 				<div class="mx-auto flex min-h-screen max-w-[2200px] flex-col gap-6 px-4 py-6 lg:px-6">
+					<section class="rounded-3xl border border-border bg-card/70 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
+						<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+							<div class="flex flex-1 flex-col gap-3">
+								<div>
+									<div class="text-xs uppercase tracking-[0.28em] text-muted-foreground">Scenes</div>
+									<div class="mt-1 text-sm text-muted-foreground">CRUD + default landing scene</div>
+								</div>
+
+								<div class="flex flex-wrap gap-2">
+									<For each={sortedScenes()}>
+										{(scene) => (
+											<button
+												class={`rounded-full border px-3 py-2 text-xs transition ${
+													sceneId() === scene._id
+														? 'border-primary bg-primary/10 text-foreground'
+														: 'border-border bg-background/70 text-muted-foreground hover:bg-accent hover:text-foreground'
+												}`}
+												type="button"
+												onClick={() => {
+													setSceneId(scene._id);
+													updateDebugSnapshot({ sceneId: scene._id });
+												}}
+											>
+												{scene.name}
+												{scene.isDefault ? ' *' : ''}
+											</button>
+										)}
+									</For>
+								</div>
+							</div>
+
+							<div class="grid gap-3 md:grid-cols-[minmax(0,16rem)_auto_auto_auto]">
+								<input
+									class="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+									value={createName()}
+									placeholder="new scene name"
+									onInput={(event) => setCreateName(event.currentTarget.value)}
+								/>
+								<button
+									class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+									type="button"
+									onClick={() => void handleCreateScene()}
+								>
+									Create
+								</button>
+								<button
+									class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+									type="button"
+									disabled={!selectedScene()}
+									onClick={() => selectedScene() && void setDefaultScene.mutate({ sceneId: selectedScene()!._id })}
+								>
+									Set default
+								</button>
+								<button
+									class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200 transition hover:bg-rose-500/20"
+									type="button"
+									disabled={!selectedScene()}
+									onClick={() => void handleDeleteScene()}
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+
+						<Show when={selectedScene()}>
+							{(scene) => (
+								<div class="mt-4 grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,18rem)_auto]">
+									<input
+										class="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+										value={sceneName()}
+										onInput={(event) => setSceneName(event.currentTarget.value)}
+									/>
+									<div class="flex flex-wrap gap-2">
+										<button
+											class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+											type="button"
+											onClick={() => void handleRenameScene()}
+										>
+											Save name
+										</button>
+										<div class="flex items-center rounded-xl border border-border px-3 text-xs text-muted-foreground">
+											{scene().width} x {scene().height}
+											{scene().isDefault ? ' default /' : ''}
+										</div>
+									</div>
+								</div>
+							)}
+						</Show>
+					</section>
+
 					<SceneCanvas
 						sceneId={sceneId()}
+						sceneName={selectedScene()?.name}
 						gridSize={gridSize()}
 						showGrid={showGrid()}
 						isDraggingSprite={isDraggingSprite()}
@@ -178,7 +337,7 @@ export default function SpriteEditor() {
 						onGridSizeChange={setGridSize}
 						onToggleGrid={() => setShowGrid((current) => !current)}
 						onDragStateChange={setIsDraggingSprite}
-					onDropTargetChange={setIsOverCanvas}
+						onDropTargetChange={setIsOverCanvas}
 						onDebugEvent={reportDebugEvent}
 						onDebugSnapshot={updateDebugSnapshot}
 					/>

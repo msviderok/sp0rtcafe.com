@@ -3,6 +3,7 @@ import { useMutation, useQuery } from 'convex-solidjs';
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
+import { getSpriteBackgroundStyle } from '~/lib/sceneStyles';
 import type { DndDebugReporter, DndDebugSnapshotReporter } from './dndDebug';
 import GridOverlay from './GridOverlay';
 import GridSizeControl from './GridSizeControl';
@@ -72,6 +73,7 @@ type BulkMoveState = {
 
 export default function SceneCanvas(props: {
 	sceneId?: Id<'scenes'>;
+	sceneName?: string;
 	gridSize: number;
 	showGrid: boolean;
 	isDraggingSprite: boolean;
@@ -90,7 +92,7 @@ export default function SceneCanvas(props: {
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<div class="text-xs uppercase tracking-[0.28em] text-muted-foreground">Scene canvas</div>
-					<h1 class="text-2xl font-semibold text-foreground">Main scene</h1>
+					<h1 class="text-2xl font-semibold text-foreground">{props.sceneName ?? 'Scene'}</h1>
 				</div>
 				<div class="flex flex-wrap items-center gap-3">
 					<GridSizeControl gridSize={props.gridSize} onChange={props.onGridSizeChange} />
@@ -908,7 +910,7 @@ function CanvasWithScene(props: {
 					>
 						<div
 							class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${ghost().pending ? '' : 'brightness-125'}`}
-							style={{ 'background-image': `url(${ghost().sprite.url})` }}
+							style={getSpriteBackgroundStyle(ghost().sprite)}
 						/>
 						<Show when={!ghost().pending}>
 							<div class="absolute inset-0 border border-dashed border-primary/60" />
@@ -948,6 +950,9 @@ function CanvasWithScene(props: {
 										url: asset.sprite.url,
 										width: view().width,
 										height: view().height,
+										bgRepeat: asset.sprite.bgRepeat,
+										bgPosition: asset.sprite.bgPosition,
+										bgSize: asset.sprite.bgSize,
 									}}
 									x={view().x}
 									y={view().y}

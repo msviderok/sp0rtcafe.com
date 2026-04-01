@@ -1,7 +1,12 @@
+import { getSpriteBackgroundStyle } from "~/lib/sceneStyles";
+
 export type SceneSprite = {
 	url: string;
 	width: number;
 	height: number;
+	bgRepeat?: string;
+	bgPosition?: string;
+	bgSize?: string;
 };
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
@@ -41,9 +46,7 @@ export default function PlacedSprite(props: {
 		>
 			<div
 				class="absolute inset-0 bg-no-repeat bg-size-[100%_100%] drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)] touch-none"
-				style={{
-					'background-image': `url(${props.sprite.url})`,
-				}}
+				style={getSpriteBackgroundStyle(props.sprite)}
 				onPointerDown={(event) => {
 					event.stopPropagation();
 					props.onSelect(event);

@@ -8,6 +8,9 @@ export type DrawerSprite = {
 	url: string;
 	width: number;
 	height: number;
+	bgRepeat?: string;
+	bgPosition?: string;
+	bgSize?: string;
 };
 
 export type DrawerSpriteDragData = {

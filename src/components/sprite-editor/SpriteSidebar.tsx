@@ -1,8 +1,10 @@
 import { useMutation, useQuery } from "convex-solidjs";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { future_genUploader } from "uploadthing/client-future";
+import { DEFAULT_BG_REPEAT, DEFAULT_BG_SIZE } from "~/lib/sceneStyles";
 import type { UploadRouter } from "~/server/uploadthing";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import type { DndDebugReporter, DndDebugSnapshotReporter } from "./dndDebug";
 import DraggableSprite from "./DraggableSprite";
 
@@ -69,16 +71,46 @@ export default function SpriteSidebar(props: {
   const sprites = useQuery(api.sprites.list, {});
   const syncFiles = useMutation(api.files.upsertUploadThingFiles);
   const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
+  const updatePresetStyle = useMutation(api.sprites.updatePresetStyle);
   const activeUploads = useQuery(api.files.listActiveUploads, {});
   const [errorMessage, setErrorMessage] = createSignal<string>();
   const [isUploading, setIsUploading] = createSignal(false);
   const [isOpen, setIsOpen] = createSignal(true);
+  const [selectedSpriteId, setSelectedSpriteId] = createSignal<Id<"sprites">>();
+  const [bgRepeat, setBgRepeat] = createSignal(DEFAULT_BG_REPEAT);
+  const [bgPosition, setBgPosition] = createSignal("");
+  const [bgSize, setBgSize] = createSignal(DEFAULT_BG_SIZE);
   let fileInputRef: HTMLInputElement | undefined;
 
   const sortedSprites = createMemo(() =>
     [...(sprites.data() ?? [])].sort((left, right) => left.key.localeCompare(right.key))
   );
   const visibleUploads = createMemo(() => activeUploads.data() ?? []);
+  const selectedSprite = createMemo(() =>
+    sortedSprites().find((sprite) => sprite._id === selectedSpriteId()) ?? null
+  );
+
+  createEffect(() => {
+    const current = selectedSprite();
+    if (!current) {
+      return;
+    }
+
+    setBgRepeat(current.bgRepeat ?? DEFAULT_BG_REPEAT);
+    setBgPosition(current.bgPosition ?? "");
+    setBgSize(current.bgSize ?? DEFAULT_BG_SIZE);
+  });
+
+  createEffect(() => {
+    const currentId = selectedSpriteId();
+    if (currentId && sortedSprites().some((sprite) => sprite._id === currentId)) {
+      return;
+    }
+
+    if (sortedSprites()[0]) {
+      setSelectedSpriteId(sortedSprites()[0]._id);
+    }
+  });
 
   onMount(() => {
     void syncUploadedSprites.mutate({ limit: 200 });
@@ -280,9 +312,22 @@ export default function SpriteSidebar(props: {
     }
   };
 
+  const handleSavePresetStyle = async () => {
+    const spriteId = selectedSpriteId();
+    if (!spriteId) {
+      return;
+    }
+
+    await updatePresetStyle.mutate({
+      spriteId,
+      bgRepeat: bgRepeat() || DEFAULT_BG_REPEAT,
+      bgPosition: bgPosition().trim(),
+      bgSize: bgSize().trim() || DEFAULT_BG_SIZE,
+    });
+  };
+
   return (
     <>
-      {/* Collapsed tab – visible only when panel is closed */}
       <button
         class={`fixed right-0 top-1/2 z-50 -translate-y-1/2 cursor-pointer rounded-l-lg border border-r-0 border-border bg-popover px-2 py-3 text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition-opacity duration-300 hover:bg-accent hover:text-foreground [writing-mode:vertical-rl] ${isOpen() ? "pointer-events-none opacity-0" : "opacity-100"}`}
         type="button"
@@ -292,9 +337,8 @@ export default function SpriteSidebar(props: {
         Assets
       </button>
 
-      {/* Panel */}
       <aside
-        class={`fixed inset-y-0 right-0 z-50 flex w-64 flex-col border-l border-border bg-popover transition-transform duration-300 ease-in-out ${isOpen() ? "translate-x-0" : "translate-x-full"}`}
+        class={`fixed inset-y-0 right-0 z-50 flex w-80 flex-col border-l border-border bg-popover transition-transform duration-300 ease-in-out ${isOpen() ? "translate-x-0" : "translate-x-full"}`}
         onKeyDown={(e) => e.key === "Escape" && setIsOpen(false)}
       >
         <div class="flex items-center justify-between border-b border-border px-4 py-3">
@@ -305,7 +349,6 @@ export default function SpriteSidebar(props: {
             onClick={() => setIsOpen(false)}
             aria-label="Collapse"
           >
-            {/* chevron right */}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="14"
@@ -331,15 +374,87 @@ export default function SpriteSidebar(props: {
             <div class="flex flex-col gap-0.5">
               <For each={sortedSprites()}>
                 {(sprite) => (
-                  <DraggableSprite
-                    sprite={sprite}
-                    debugEnabled={props.debugEnabled}
-                    onDebugEvent={props.onDebugEvent}
-                    onDebugSnapshot={props.onDebugSnapshot}
-                  />
+                  <div class="flex items-center gap-2">
+                    <div class="min-w-0 flex-1">
+                      <DraggableSprite
+                        sprite={sprite}
+                        debugEnabled={props.debugEnabled}
+                        onDebugEvent={props.onDebugEvent}
+                        onDebugSnapshot={props.onDebugSnapshot}
+                      />
+                    </div>
+                    <button
+                      class={`rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.18em] transition ${
+                        selectedSpriteId() === sprite._id
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                      type="button"
+                      onClick={() => setSelectedSpriteId(sprite._id)}
+                    >
+                      Style
+                    </button>
+                  </div>
                 )}
               </For>
             </div>
+          </Show>
+
+          <Show when={selectedSprite()}>
+            {(sprite) => (
+              <section class="mt-4 rounded-2xl border border-border bg-background/60 p-3">
+                <div class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+                  Preset style
+                </div>
+                <div class="mt-1 truncate text-sm text-foreground">{sprite().key}</div>
+
+                <div class="mt-3 grid gap-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">
+                    <span>bg repeat</span>
+                    <select
+                      class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                      value={bgRepeat()}
+                      onChange={(event) => setBgRepeat(event.currentTarget.value)}
+                    >
+                      <option value="no-repeat">no-repeat</option>
+                      <option value="repeat">repeat</option>
+                      <option value="repeat-x">repeat-x</option>
+                      <option value="repeat-y">repeat-y</option>
+                      <option value="space">space</option>
+                      <option value="round">round</option>
+                    </select>
+                  </label>
+
+                  <label class="grid gap-1 text-xs text-muted-foreground">
+                    <span>bg position</span>
+                    <input
+                      class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                      value={bgPosition()}
+                      placeholder="unset"
+                      onInput={(event) => setBgPosition(event.currentTarget.value)}
+                    />
+                  </label>
+
+                  <label class="grid gap-1 text-xs text-muted-foreground">
+                    <span>bg size</span>
+                    <input
+                      class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                      value={bgSize()}
+                      placeholder={DEFAULT_BG_SIZE}
+                      onInput={(event) => setBgSize(event.currentTarget.value)}
+                    />
+                  </label>
+
+                  <button
+                    class="rounded-lg border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+                    type="button"
+                    onClick={() => void handleSavePresetStyle()}
+                  >
+                    Save preset style
+                  </button>
+                </div>
+              </section>
+            )}
           </Show>
 
           <Show when={visibleUploads().length > 0}>

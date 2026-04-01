@@ -29,6 +29,9 @@ export default defineSchema({
     url: v.string(),
     width: v.number(),
     height: v.number(),
+    bgRepeat: v.optional(v.string()),
+    bgPosition: v.optional(v.string()),
+    bgSize: v.optional(v.string()),
   })
     .index("by_url", ["url"])
     .index("by_key", ["key"]),
@@ -37,7 +40,10 @@ export default defineSchema({
     name: v.string(),
     width: v.number(),
     height: v.number(),
-  }).index("by_name", ["name"]),
+    isDefault: v.optional(v.boolean()),
+  })
+    .index("by_name", ["name"])
+    .index("by_isDefault", ["isDefault"]),
 
   sceneAssets: defineTable({
     sceneId: v.id("scenes"),
