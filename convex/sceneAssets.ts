@@ -56,6 +56,7 @@ export const listByScene = query({
           rotation: asset.rotation ?? 0,
           opacity: normalizeOpacity(asset.opacity),
           locked: asset.locked ?? false,
+          collision: asset.collision ?? false,
           sprite,
         };
       }),
@@ -107,6 +108,7 @@ export const place = mutation({
       rotation: 0,
       opacity: 1,
       locked: false,
+      collision: false,
     });
   },
 });
@@ -122,6 +124,7 @@ export const update = mutation({
     rotation: v.optional(v.number()),
     opacity: v.optional(v.number()),
     locked: v.optional(v.boolean()),
+    collision: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
@@ -142,6 +145,7 @@ export const update = mutation({
       rotation?: number;
       opacity?: number;
       locked?: boolean;
+      collision?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
@@ -170,6 +174,9 @@ export const update = mutation({
     }
     if (args.locked !== undefined) {
       patch.locked = args.locked;
+    }
+    if (args.collision !== undefined) {
+      patch.collision = args.collision;
     }
     if (args.bgRepeat !== undefined) {
       patch.bgRepeat = args.bgRepeat;
@@ -212,6 +219,7 @@ export const restore = mutation({
     rotation: v.number(),
     opacity: v.number(),
     locked: v.boolean(),
+    collision: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
@@ -234,6 +242,7 @@ export const duplicate = mutation({
         rotation: v.number(),
         opacity: v.number(),
         locked: v.boolean(),
+        collision: v.optional(v.boolean()),
         bgRepeat: v.optional(v.string()),
         bgPosition: v.optional(v.string()),
         bgSize: v.optional(v.string()),
@@ -267,6 +276,7 @@ export const duplicate = mutation({
         rotation: asset.rotation,
         opacity: normalizeOpacity(asset.opacity),
         locked: asset.locked,
+        collision: asset.collision ?? false,
         ...(asset.bgRepeat !== undefined ? { bgRepeat: asset.bgRepeat } : {}),
         ...(asset.bgPosition !== undefined ? { bgPosition: asset.bgPosition } : {}),
         ...(asset.bgSize !== undefined ? { bgSize: asset.bgSize } : {}),

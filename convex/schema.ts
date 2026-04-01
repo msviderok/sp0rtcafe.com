@@ -58,8 +58,29 @@ export default defineSchema({
     rotation: v.optional(v.number()),
     opacity: v.optional(v.number()),
     locked: v.optional(v.boolean()),
+    collision: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
   }).index("by_sceneId", ["sceneId"]),
+
+  characters: defineTable({
+    sceneId: v.id("scenes"),
+    sessionId: v.string(),
+    tokenIdentifier: v.optional(v.string()),
+    x: v.number(),
+    y: v.number(),
+    vx: v.number(),
+    vy: v.number(),
+    width: v.number(),
+    height: v.number(),
+    grounded: v.boolean(),
+    color: v.string(),
+    lastProcessedSequence: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_sceneId", ["sceneId"])
+    .index("by_sessionId", ["sessionId"])
+    .index("by_sceneId_and_tokenIdentifier", ["sceneId", "tokenIdentifier"])
+    .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
 });

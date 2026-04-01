@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as characters from "../characters.js";
 import type * as files from "../files.js";
 import type * as sceneAssets from "../sceneAssets.js";
 import type * as scenes from "../scenes.js";
@@ -20,6 +21,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  characters: typeof characters;
   files: typeof files;
   sceneAssets: typeof sceneAssets;
   scenes: typeof scenes;

@@ -54,6 +54,7 @@ type DeletedAssetSnapshot = {
   rotation: number;
   opacity: number;
   locked: boolean;
+  collision: boolean;
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
@@ -113,6 +114,7 @@ type CopiedAssetSnapshot = {
   rotation: number;
   opacity: number;
   locked: boolean;
+  collision: boolean;
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
@@ -548,12 +550,13 @@ function CanvasWithScene(props: {
     x: number;
     y: number;
     width: number;
-    height: number;
-    zIndex?: number;
-    rotation?: number;
-    opacity?: number;
-    locked?: boolean;
-  }) => {
+      height: number;
+      zIndex?: number;
+      rotation?: number;
+      opacity?: number;
+      locked?: boolean;
+      collision?: boolean;
+    }) => {
     const local = localTransforms()[asset._id];
     return {
       x: local?.x ?? asset.x,
@@ -578,6 +581,7 @@ function CanvasWithScene(props: {
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
+      collision?: boolean;
     },
     view: LocalTransform
   ) => {
@@ -594,6 +598,7 @@ function CanvasWithScene(props: {
         rotation: view.rotation,
         opacity: view.opacity,
         locked: view.locked,
+        collision: asset.collision ?? false,
         bgRepeat: asset.bgRepeat,
         bgPosition: asset.bgPosition,
         bgSize: asset.bgSize,
@@ -637,6 +642,7 @@ function CanvasWithScene(props: {
       rotation?: number;
       opacity?: number;
       locked?: boolean;
+      collision?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
@@ -657,6 +663,7 @@ function CanvasWithScene(props: {
       rotation?: number;
       opacity?: number;
       locked?: boolean;
+      collision?: boolean;
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
@@ -696,6 +703,7 @@ function CanvasWithScene(props: {
       rotation: nextRotation,
       opacity: nextOpacity,
       locked: nextLocked,
+      ...(patch.collision !== undefined ? { collision: patch.collision } : {}),
       ...(patch.bgRepeat !== undefined ? { bgRepeat: patch.bgRepeat } : {}),
       ...(patch.bgPosition !== undefined ? { bgPosition: patch.bgPosition } : {}),
       ...(patch.bgSize !== undefined ? { bgSize: patch.bgSize } : {}),
@@ -799,6 +807,7 @@ function CanvasWithScene(props: {
         x: 0,
         width: SCENE_WIDTH,
         height: props.gridSize * 10,
+        collision: true,
         bgRepeat: "repeat",
         bgSize: `${props.gridSize}px ${props.gridSize}px`,
       });
@@ -812,6 +821,7 @@ function CanvasWithScene(props: {
         y: SCENE_HEIGHT - height,
         width: SCENE_WIDTH,
         height,
+        collision: true,
         bgRepeat: "repeat",
         bgSize: `${props.gridSize}px ${props.gridSize}px`,
       });
@@ -906,6 +916,7 @@ function CanvasWithScene(props: {
           rotation: view.rotation,
           opacity: view.opacity,
           locked: view.locked,
+          collision: asset.collision ?? false,
           bgRepeat: asset.bgRepeat,
           bgPosition: asset.bgPosition,
           bgSize: asset.bgSize,
@@ -1838,6 +1849,7 @@ function CanvasWithScene(props: {
                       zIndex={view()!.zIndex}
                       rotation={view()!.rotation}
                       locked={view()!.locked}
+                      collision={asset()!.collision ?? false}
                       canResizeFreely={canAssetResizeFreely(asset()!)}
                       selectionMode={selectionMode()}
                       actionsDisabled={areSpriteActionsDisabled()}
@@ -2078,6 +2090,11 @@ function CanvasWithScene(props: {
                         void updateAsset.mutate({
                           assetId,
                           locked: nextLocked,
+                        });
+                      }}
+                      onToggleCollision={() => {
+                        void applyAssetPatch(asset()!, {
+                          collision: !(asset()!.collision ?? false),
                         });
                       }}
                       onToggleStyleEditor={() => {

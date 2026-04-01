@@ -32,12 +32,10 @@ export default function createGameLoop(options: { autostart?: boolean; fn: () =>
   }
 
   function start() {
-    console.log("start");
     mainGameLoop = requestAnimationFrame(gameLoop);
   }
 
   function stop() {
-    console.log("stop");
     if (mainGameLoop) {
       cancelAnimationFrame(mainGameLoop);
       mainGameLoop = undefined;

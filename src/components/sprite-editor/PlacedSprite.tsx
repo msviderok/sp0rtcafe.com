@@ -23,6 +23,11 @@ const IconTrash = () => (
     <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
   </svg>
 );
+const IconCollision = () => (
+  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M40,64A16,16,0,0,1,56,48H200a16,16,0,0,1,16,16V192a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16ZM200,64H56V192H200ZM88,96h80a8,8,0,0,1,0,16H88a8,8,0,0,1,0-16Zm0,48h80a8,8,0,0,1,0,16H88a8,8,0,0,1,0-16Z" />
+  </svg>
+);
 
 export type SceneSprite = {
   url: string;
@@ -44,6 +49,7 @@ export default function PlacedSprite(props: {
   zIndex: number;
   rotation: number;
   locked: boolean;
+  collision: boolean;
   canResizeFreely: boolean;
   selectionMode: "none" | "single" | "multi";
   actionsDisabled?: boolean;
@@ -55,6 +61,7 @@ export default function PlacedSprite(props: {
   onRotateStart: (event: PointerEvent) => void;
   onDelete: () => void;
   onToggleLock: () => void;
+  onToggleCollision: () => void;
   onToggleStyleEditor: () => void;
 }) {
   const cornerHandleClass =
@@ -94,7 +101,7 @@ export default function PlacedSprite(props: {
           <div
             class="pointer-events-none absolute inset-0 z-30 border-2 border-solid"
             style={{
-              "border-color": "rgb(255 217 122 / 1)",
+              "border-color": props.collision ? "rgb(52 211 153 / 0.95)" : "rgb(255 217 122 / 1)",
             }}
           />
 
@@ -134,7 +141,27 @@ export default function PlacedSprite(props: {
               >
                 {props.styleEditorContent}
               </Popover.Content>
-            </Popover.Root>
+              </Popover.Root>
+
+            <div class="mx-0.5 h-3.5 w-px bg-white/10" />
+
+            <button
+              class={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.collision
+                  ? "border-emerald-400/18 bg-emerald-500/15 text-emerald-200"
+                  : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
+              )}
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleCollision();
+              }}
+            >
+              <IconCollision />
+              {props.collision ? "Collision" : "No collision"}
+            </button>
 
             <div class="mx-0.5 h-3.5 w-px bg-white/10" />
 

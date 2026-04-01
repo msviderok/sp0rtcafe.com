@@ -22,6 +22,7 @@
     "@tanstack/solid-hotkeys": "^0.9.1",
     "@uploadthing/solid": "^7.3.3",
     "class-variance-authority": "^0.7.1",
+    "clerk-solidjs": "^2.0.10",
     "clsx": "^2.1.1",
     "convex": "^1.34.1",
     "convex-solidjs": "^0.0.3",
