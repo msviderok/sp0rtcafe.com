@@ -3,11 +3,11 @@ import { splitProps } from "solid-js";
 
 import { cn } from "~/lib/utils";
 
-function Drawer(props: DrawerPrimitive.Root.Props) {
+function DrawerRoot(props: DrawerPrimitive.Root.Props) {
   return <DrawerPrimitive.Root data-slot="drawer" {...props} />;
 }
 
-function DrawerTrigger(props: DrawerPrimitive.Trigger) {
+function DrawerTrigger(props: DrawerPrimitive.Trigger.Props) {
   return <DrawerPrimitive.Trigger data-slot="drawer-trigger" {...props} />;
 }
 
@@ -19,25 +19,10 @@ function DrawerClose(props: DrawerPrimitive.Close.Props) {
   return <DrawerPrimitive.Close data-slot="drawer-close" {...props} />;
 }
 
-function DrawerOverlay(props: DrawerPrimitive.Backdrop.Props) {
-  const [local, rest] = splitProps(props, ["class"]);
-  return (
-    <DrawerPrimitive.Backdrop
-      data-slot="drawer-overlay"
-      class={cn(
-        "fixed inset-0 z-50 bg-black/80 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
-        local.class
-      )}
-      {...rest}
-    />
-  );
-}
-
 function DrawerContent(props: DrawerPrimitive.Content.Props) {
   const [local, rest] = splitProps(props, ["class", "children"]);
   return (
     <DrawerPortal data-slot="drawer-portal">
-      <DrawerOverlay />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         class={cn(
@@ -76,12 +61,11 @@ function DrawerDescription(props: DrawerPrimitive.Description.Props) {
 }
 
 export {
-  Drawer,
   DrawerClose,
   DrawerContent,
   DrawerDescription,
-  DrawerOverlay,
   DrawerPortal,
+  DrawerRoot,
   DrawerTitle,
   DrawerTrigger,
 };

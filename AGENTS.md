@@ -65,3 +65,5 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 Built with [Mintlify](https://mintlify.com).
 
 <!-- dnd-kit-end -->
+
+All UI components from src/components/ui must be wrapped in `clientOnly`.

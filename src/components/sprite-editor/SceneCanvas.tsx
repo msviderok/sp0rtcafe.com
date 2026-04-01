@@ -7,7 +7,7 @@ import type { DndDebugReporter, DndDebugSnapshotReporter } from './dndDebug';
 import GridOverlay from './GridOverlay';
 import GridSizeControl from './GridSizeControl';
 import PlacedSprite from './PlacedSprite';
-import { isDrawerSpriteDragData } from './spriteDrag';
+import { isDrawerSpriteDragData, type DrawerSprite } from './spriteDrag';
 
 const SCENE_WIDTH = 1920;
 const SCENE_HEIGHT = 1000;
@@ -71,6 +71,7 @@ export default function SceneCanvas(props: {
 	onGridSizeChange: (value: number) => void;
 	onToggleGrid: () => void;
 	onDragStateChange: (isDragging: boolean) => void;
+	onDropTargetChange?: (isOver: boolean) => void;
 	onDebugEvent?: DndDebugReporter;
 	onDebugSnapshot?: DndDebugSnapshotReporter;
 }) {
@@ -95,7 +96,7 @@ export default function SceneCanvas(props: {
 				</div>
 			</div>
 
-			<div class="overflow-auto rounded-[28px] border border-border bg-muted/25 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
+			<div class="overflow-auto rounded-2xl border border-border bg-muted/25 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
 				<Show when={props.sceneId} fallback={<CanvasFrame gridSize={props.gridSize} showGrid={showGrid()} />}>
 					{(sceneId) => (
 						<CanvasWithScene
@@ -103,6 +104,7 @@ export default function SceneCanvas(props: {
 							gridSize={props.gridSize}
 							showGrid={showGrid()}
 							onDragStateChange={props.onDragStateChange}
+							onDropTargetChange={props.onDropTargetChange}
 							debugEnabled={props.debugEnabled}
 							onDebugEvent={props.onDebugEvent}
 							onDebugSnapshot={props.onDebugSnapshot}
@@ -119,6 +121,7 @@ function CanvasWithScene(props: {
 	gridSize: number;
 	showGrid: boolean;
 	onDragStateChange: (isDragging: boolean) => void;
+	onDropTargetChange?: (isOver: boolean) => void;
 	debugEnabled?: boolean;
 	onDebugEvent?: DndDebugReporter;
 	onDebugSnapshot?: DndDebugSnapshotReporter;
@@ -137,6 +140,8 @@ function CanvasWithScene(props: {
 	const [editingAsset, setEditingAsset] = createSignal<EditingAsset | null>(null);
 	const [deletedStack, setDeletedStack] = createSignal<DeletedAssetSnapshot[]>([]);
 	const [isDropTarget, setIsDropTarget] = createSignal(false);
+	const [dragGhost, setDragGhost] = createSignal<{ x: number; y: number; sprite: DrawerSprite; pending: boolean } | null>(null);
+	let assetsCountAtDrop = -1;
 
 	const placedAssets = createMemo(() => assets.data() ?? []);
 
@@ -196,11 +201,24 @@ function CanvasWithScene(props: {
 		});
 	});
 
+	createEffect(() => {
+		props.onDropTargetChange?.(isDropTarget());
+	});
+
+	createEffect(() => {
+		const count = placedAssets().length;
+		if (dragGhost()?.pending && count > assetsCountAtDrop) {
+			setDragGhost(null);
+			assetsCountAtDrop = -1;
+		}
+	});
+
 	useDragDropMonitor({
 		onDragStart: ({ operation }) => {
 			if (isDrawerSpriteDragData(operation.source?.data)) {
 				props.onDragStateChange(true);
 				setIsDropTarget(false);
+				setDragGhost(null);
 				lastInsideState = false;
 				props.onDebugSnapshot?.({
 					lastEvent: 'drag start',
@@ -236,6 +254,19 @@ function CanvasWithScene(props: {
 			const pointer = `${Math.round(clientX)}, ${Math.round(clientY)}`;
 			const inside = pointerPosition?.inside ?? false;
 			setIsDropTarget(inside);
+
+			if (inside && pointerPosition) {
+				const sprite = operation.source.data.sprite;
+				setDragGhost({
+					x: Math.max(0, Math.min(SCENE_WIDTH - sprite.width, snapToGrid(pointerPosition.rawX - sprite.width / 2, props.gridSize))),
+					y: Math.max(0, Math.min(SCENE_HEIGHT - sprite.height, snapToGrid(pointerPosition.rawY - sprite.height / 2, props.gridSize))),
+					sprite,
+					pending: false,
+				});
+			} else {
+				setDragGhost(null);
+			}
+
 			props.onDebugSnapshot?.({
 				lastEvent: 'drag move',
 				pointer,
@@ -260,6 +291,7 @@ function CanvasWithScene(props: {
 
 			if (clientX === undefined || clientY === undefined) {
 				setIsDropTarget(false);
+				setDragGhost(null);
 				props.onDebugSnapshot?.({
 					lastEvent: 'drag end missing pointer',
 					pointer: 'missing',
@@ -276,6 +308,7 @@ function CanvasWithScene(props: {
 			lastInsideState = false;
 
 			if (canceled || !pointerPosition?.inside) {
+				setDragGhost(null);
 				props.onDebugSnapshot?.({
 					lastEvent: canceled ? 'drag canceled' : 'drop rejected',
 					pointer,
@@ -289,8 +322,9 @@ function CanvasWithScene(props: {
 				return;
 			}
 
-			const x = Math.max(0, Math.min(SCENE_WIDTH, snapToGrid(pointerPosition.rawX, props.gridSize)));
-			const y = Math.max(0, Math.min(SCENE_HEIGHT, snapToGrid(pointerPosition.rawY, props.gridSize)));
+			const sprite = operation.source.data.sprite;
+			const x = Math.max(0, Math.min(SCENE_WIDTH - sprite.width, snapToGrid(pointerPosition.rawX - sprite.width / 2, props.gridSize)));
+			const y = Math.max(0, Math.min(SCENE_HEIGHT - sprite.height, snapToGrid(pointerPosition.rawY - sprite.height / 2, props.gridSize)));
 			props.onDebugSnapshot?.({
 				lastEvent: 'drop accepted',
 				pointer,
@@ -298,6 +332,10 @@ function CanvasWithScene(props: {
 				drop: `${x}, ${y}`,
 			});
 			props.onDebugEvent?.('drop accepted', `${operation.source.data.sprite.key} -> ${x}, ${y}`);
+
+			// Transition ghost to pending so it stays visible until Convex syncs
+			assetsCountAtDrop = placedAssets().length;
+			setDragGhost({ x, y, sprite, pending: true });
 
 			void placeAsset.mutate({
 				sceneId: props.sceneId,
@@ -583,6 +621,29 @@ function CanvasWithScene(props: {
 			isDropTarget={isDropTarget()}
 			onPointerDown={() => setSelectedAssetId(null)}
 		>
+			{/* Drag ghost preview / pending placement */}
+			<Show when={dragGhost()}>
+				{(ghost) => (
+					<div
+						class={`pointer-events-none absolute transition-opacity duration-150 ${ghost().pending ? 'opacity-100' : 'opacity-45'}`}
+						style={{
+							left: `${ghost().x}px`,
+							top: `${ghost().y}px`,
+							width: `${ghost().sprite.width}px`,
+							height: `${ghost().sprite.height}px`,
+						}}
+					>
+						<div
+							class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${ghost().pending ? '' : 'brightness-125'}`}
+							style={{ 'background-image': `url(${ghost().sprite.url})` }}
+						/>
+						<Show when={!ghost().pending}>
+							<div class="absolute inset-0 border border-dashed border-primary/60" />
+						</Show>
+					</div>
+				)}
+			</Show>
+
 			<Show
 				when={!assets.isLoading()}
 				fallback={<div class="absolute left-6 top-6 text-sm text-muted-foreground">Loading scene...</div>}
@@ -694,7 +755,7 @@ function CanvasFrame(props: {
 	return (
 		<div
 			ref={props.ref}
-			class={`relative overflow-hidden rounded-[24px] border bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)] transition-colors ${props.isDropTarget ? 'border-primary/70 shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent),0_0_42px_color-mix(in_oklch,var(--primary)_16%,transparent)]' : 'border-border'}`}
+			class={`relative overflow-hidden rounded-xl border bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)] transition-colors ${props.isDropTarget ? 'border-primary/70 shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent),0_0_42px_color-mix(in_oklch,var(--primary)_16%,transparent)]' : 'border-border'}`}
 			style={{
 				width: `${SCENE_WIDTH}px`,
 				height: `${SCENE_HEIGHT}px`,

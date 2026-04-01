@@ -16,6 +16,7 @@ export default function SpriteEditor() {
 	const [gridSize, setGridSize] = createSignal(32);
 	const [showGrid, setShowGrid] = createSignal(true);
 	const [isDraggingSprite, setIsDraggingSprite] = createSignal(false);
+	const [isOverCanvas, setIsOverCanvas] = createSignal(false);
 	const [activeDrawerSprite, setActiveDrawerSprite] = createSignal<DrawerSprite>();
 	const [debugEnabled, setDebugEnabled] = createSignal(false);
 	const [debugSnapshot, setDebugSnapshot] = createSignal<DndDebugSnapshot>({
@@ -167,7 +168,7 @@ export default function SpriteEditor() {
 					</div>
 				</Show>
 
-				<div class="mx-auto flex min-h-screen max-w-[2200px] flex-col gap-6 px-4 py-6 pr-24 lg:px-6 lg:pr-24">
+				<div class="mx-auto flex min-h-screen max-w-[2200px] flex-col gap-6 px-4 py-6 lg:px-6">
 					<SceneCanvas
 						sceneId={sceneId()}
 						gridSize={gridSize()}
@@ -177,6 +178,7 @@ export default function SpriteEditor() {
 						onGridSizeChange={setGridSize}
 						onToggleGrid={() => setShowGrid((current) => !current)}
 						onDragStateChange={setIsDraggingSprite}
+					onDropTargetChange={setIsOverCanvas}
 						onDebugEvent={reportDebugEvent}
 						onDebugSnapshot={updateDebugSnapshot}
 					/>
@@ -190,7 +192,7 @@ export default function SpriteEditor() {
 			</div>
 
 			<DragOverlay class="pointer-events-none z-[80]" dropAnimation={null}>
-				<Show when={activeDrawerSprite()}>
+				<Show when={activeDrawerSprite() && !isOverCanvas()}>
 					{(sprite) => (
 						<div class="flex h-14 w-14 items-center justify-center rounded-lg bg-card/90 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.3)] backdrop-blur-sm">
 							<img alt={sprite().key} class="max-h-full max-w-full object-contain" src={sprite().url} />
