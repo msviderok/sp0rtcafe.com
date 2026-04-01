@@ -104,6 +104,20 @@ type BulkResizeState = {
   startScrollTop: number;
 };
 
+type CopiedAssetSnapshot = {
+  spriteId: Id<"sprites">;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  locked: boolean;
+  bgRepeat?: string;
+  bgPosition?: string;
+  bgSize?: string;
+};
+
 export default function SceneCanvas(props: {
   sceneId?: Id<"scenes">;
   sceneName?: string;
@@ -171,6 +185,7 @@ function CanvasWithScene(props: {
 
   const assets = useQuery(api.sceneAssets.listByScene, () => ({ sceneId: props.sceneId }));
   const placeAsset = useMutation(api.sceneAssets.place);
+  const duplicateAssets = useMutation(api.sceneAssets.duplicate);
   const reorderAssetLayers = useMutation(api.sceneAssets.reorder);
   const updateAsset = useMutation(api.sceneAssets.update);
   const removeAsset = useMutation(api.sceneAssets.remove);
@@ -201,6 +216,8 @@ function CanvasWithScene(props: {
   const [bgSizeDraft, setBgSizeDraft] = createSignal(DEFAULT_BG_SIZE);
   const [opacityDraft, setOpacityDraft] = createSignal("1");
   let assetsCountAtDrop = -1;
+  let copiedAssets: CopiedAssetSnapshot[] = [];
+  let lastPointerClientPosition: { x: number; y: number } | null = null;
   const restoreScrollViewport = (left: number, top: number) => {
     const viewport = props.getScrollViewport();
     if (!viewport) {
@@ -338,6 +355,18 @@ function CanvasWithScene(props: {
     props.onDebugSnapshot?.({
       sceneId: props.sceneId,
     });
+  });
+
+  createEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      lastPointerClientPosition = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    onCleanup(() => window.removeEventListener("pointermove", handlePointerMove));
   });
 
   createEffect(() => {
@@ -857,6 +886,77 @@ function CanvasWithScene(props: {
     await reorderAssetLayers.mutate({ updates });
   };
 
+  const copySelectedAssets = () => {
+    const ids = selectedAssetIds();
+    if (ids.size === 0) {
+      copiedAssets = [];
+      return;
+    }
+
+    copiedAssets = orderedPlacedAssets()
+      .filter((asset) => ids.has(asset._id))
+      .map((asset) => {
+        const view = getAssetView(asset);
+        return {
+          spriteId: asset.spriteId,
+          x: view.x,
+          y: view.y,
+          width: view.width,
+          height: view.height,
+          rotation: view.rotation,
+          opacity: view.opacity,
+          locked: view.locked,
+          bgRepeat: asset.bgRepeat,
+          bgPosition: asset.bgPosition,
+          bgSize: asset.bgSize,
+        };
+      });
+  };
+
+  const pasteCopiedAssets = async () => {
+    if (copiedAssets.length === 0 || !lastPointerClientPosition) {
+      return;
+    }
+
+    const pointerPosition = getCanvasPointerPosition(
+      lastPointerClientPosition.x,
+      lastPointerClientPosition.y
+    );
+    if (!pointerPosition) {
+      return;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const asset of copiedAssets) {
+      minX = Math.min(minX, asset.x);
+      minY = Math.min(minY, asset.y);
+      maxX = Math.max(maxX, asset.x + asset.width);
+      maxY = Math.max(maxY, asset.y + asset.height);
+    }
+
+    const centerX = minX + (maxX - minX) / 2;
+    const centerY = minY + (maxY - minY) / 2;
+    const offsetX = pointerPosition.rawX - centerX;
+    const offsetY = pointerPosition.rawY - centerY;
+
+    const insertedIds = await duplicateAssets.mutate({
+      sceneId: props.sceneId,
+      assets: copiedAssets.map((asset) => ({
+        ...asset,
+        x: asset.x + offsetX,
+        y: asset.y + offsetY,
+      })),
+    });
+
+    setSelectedAssetIds(new Set(insertedIds));
+    setStyleEditorAssetId(null);
+    setHydratedStyleEditorAssetId(null);
+  };
+
   createHotkey(
     "Mod+[",
     () => {
@@ -900,6 +1000,26 @@ function CanvasWithScene(props: {
         event.preventDefault();
         setDeletedStack((current) => current.slice(0, -1));
         void restoreAsset.mutate(latest);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+        if (selectedAssetIds().size === 0) {
+          return;
+        }
+
+        event.preventDefault();
+        copySelectedAssets();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v") {
+        if (copiedAssets.length === 0) {
+          return;
+        }
+
+        event.preventDefault();
+        void pasteCopiedAssets();
         return;
       }
 

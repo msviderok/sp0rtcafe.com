@@ -221,6 +221,63 @@ export const restore = mutation({
   },
 });
 
+export const duplicate = mutation({
+  args: {
+    sceneId: v.id("scenes"),
+    assets: v.array(
+      v.object({
+        spriteId: v.id("sprites"),
+        x: v.number(),
+        y: v.number(),
+        width: v.number(),
+        height: v.number(),
+        rotation: v.number(),
+        opacity: v.number(),
+        locked: v.boolean(),
+        bgRepeat: v.optional(v.string()),
+        bgPosition: v.optional(v.string()),
+        bgSize: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const sceneAssets = await ctx.db
+      .query("sceneAssets")
+      .withIndex("by_sceneId", (q) => q.eq("sceneId", args.sceneId))
+      .take(500);
+    const orderedSceneAssets = sortSceneAssetsByOrder(sceneAssets);
+
+    for (const [index, asset] of orderedSceneAssets.entries()) {
+      const nextZIndex = index + 1;
+      if (asset.zIndex !== nextZIndex) {
+        await ctx.db.patch(asset._id, { zIndex: nextZIndex });
+      }
+    }
+
+    const insertedIds = [];
+    for (const [index, asset] of args.assets.entries()) {
+      const assetId = await ctx.db.insert("sceneAssets", {
+        sceneId: args.sceneId,
+        spriteId: asset.spriteId,
+        x: asset.x,
+        y: asset.y,
+        width: asset.width,
+        height: asset.height,
+        zIndex: orderedSceneAssets.length + index + 1,
+        rotation: asset.rotation,
+        opacity: normalizeOpacity(asset.opacity),
+        locked: asset.locked,
+        ...(asset.bgRepeat !== undefined ? { bgRepeat: asset.bgRepeat } : {}),
+        ...(asset.bgPosition !== undefined ? { bgPosition: asset.bgPosition } : {}),
+        ...(asset.bgSize !== undefined ? { bgSize: asset.bgSize } : {}),
+      });
+      insertedIds.push(assetId);
+    }
+
+    return insertedIds;
+  },
+});
+
 export const reorder = mutation({
   args: {
     updates: v.array(
