@@ -3,6 +3,7 @@ import { future_genUploader } from 'uploadthing/client-future';
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { UploadRouter } from '~/server/uploadthing';
+import type { DndDebugReporter, DndDebugSnapshotReporter } from './dndDebug';
 import DraggableSprite from './DraggableSprite';
 
 const uploadThing = future_genUploader<UploadRouter>({
@@ -60,7 +61,11 @@ function compactUploadRecord(record: {
 	};
 }
 
-export default function SpriteSidebar() {
+export default function SpriteSidebar(props: {
+	debugEnabled?: boolean;
+	onDebugEvent?: DndDebugReporter;
+	onDebugSnapshot?: DndDebugSnapshotReporter;
+}) {
 	const sprites = useQuery(api.sprites.list, {});
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
 	const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
@@ -277,7 +282,16 @@ export default function SpriteSidebar() {
 			<div class="flex-1 overflow-y-auto overflow-x-hidden p-2">
 				<Show when={!sprites.isLoading()} fallback={<div class="p-2 text-xs text-muted-foreground">...</div>}>
 					<div class="flex flex-wrap gap-1">
-						<For each={sortedSprites()}>{(sprite) => <DraggableSprite sprite={sprite} />}</For>
+						<For each={sortedSprites()}>
+							{(sprite) => (
+								<DraggableSprite
+									sprite={sprite}
+									debugEnabled={props.debugEnabled}
+									onDebugEvent={props.onDebugEvent}
+									onDebugSnapshot={props.onDebugSnapshot}
+								/>
+							)}
+						</For>
 					</div>
 				</Show>
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery } from 'convex-solidjs';
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
+import type { DndDebugReporter, DndDebugSnapshotReporter } from './dndDebug';
 import GridOverlay from './GridOverlay';
 import GridSizeControl from './GridSizeControl';
 import PlacedSprite from './PlacedSprite';
@@ -66,9 +67,12 @@ export default function SceneCanvas(props: {
 	gridSize: number;
 	showGrid: boolean;
 	isDraggingSprite: boolean;
+	debugEnabled?: boolean;
 	onGridSizeChange: (value: number) => void;
 	onToggleGrid: () => void;
 	onDragStateChange: (isDragging: boolean) => void;
+	onDebugEvent?: DndDebugReporter;
+	onDebugSnapshot?: DndDebugSnapshotReporter;
 }) {
 	const showGrid = createMemo(() => props.showGrid || props.isDraggingSprite);
 
@@ -99,6 +103,9 @@ export default function SceneCanvas(props: {
 							gridSize={props.gridSize}
 							showGrid={showGrid()}
 							onDragStateChange={props.onDragStateChange}
+							debugEnabled={props.debugEnabled}
+							onDebugEvent={props.onDebugEvent}
+							onDebugSnapshot={props.onDebugSnapshot}
 						/>
 					)}
 				</Show>
@@ -112,8 +119,12 @@ function CanvasWithScene(props: {
 	gridSize: number;
 	showGrid: boolean;
 	onDragStateChange: (isDragging: boolean) => void;
+	debugEnabled?: boolean;
+	onDebugEvent?: DndDebugReporter;
+	onDebugSnapshot?: DndDebugSnapshotReporter;
 }) {
 	let canvasRef: HTMLDivElement | undefined;
+	let lastInsideState = false;
 
 	const assets = useQuery(api.sceneAssets.listByScene, () => ({ sceneId: props.sceneId }));
 	const placeAsset = useMutation(api.sceneAssets.place);
@@ -179,11 +190,26 @@ function CanvasWithScene(props: {
 		};
 	};
 
+	createEffect(() => {
+		props.onDebugSnapshot?.({
+			sceneId: props.sceneId,
+		});
+	});
+
 	useDragDropMonitor({
 		onDragStart: ({ operation }) => {
 			if (isDrawerSpriteDragData(operation.source?.data)) {
 				props.onDragStateChange(true);
 				setIsDropTarget(false);
+				lastInsideState = false;
+				props.onDebugSnapshot?.({
+					lastEvent: 'drag start',
+					activeSpriteKey: operation.source.data.sprite.key,
+					sourceId: operation.source.data.spriteId,
+					canvasInside: false,
+					drop: 'pending',
+				});
+				props.onDebugEvent?.('drag start', operation.source.data.sprite.key);
 			}
 		},
 		onDragMove: ({ operation, nativeEvent }) => {
@@ -197,10 +223,29 @@ function CanvasWithScene(props: {
 
 			if (clientX === undefined || clientY === undefined) {
 				setIsDropTarget(false);
+				props.onDebugSnapshot?.({
+					lastEvent: 'drag move missing pointer',
+					pointer: 'missing',
+					canvasInside: false,
+				});
+				props.onDebugEvent?.('drag move missing pointer');
 				return;
 			}
 
-			setIsDropTarget(getCanvasPointerPosition(clientX, clientY)?.inside ?? false);
+			const pointerPosition = getCanvasPointerPosition(clientX, clientY);
+			const pointer = `${Math.round(clientX)}, ${Math.round(clientY)}`;
+			const inside = pointerPosition?.inside ?? false;
+			setIsDropTarget(inside);
+			props.onDebugSnapshot?.({
+				lastEvent: 'drag move',
+				pointer,
+				canvasInside: inside,
+			});
+
+			if (inside !== lastInsideState) {
+				lastInsideState = inside;
+				props.onDebugEvent?.(inside ? 'canvas entered' : 'canvas left', pointer);
+			}
 		},
 		onDragEnd: ({ operation, nativeEvent, canceled }) => {
 			if (!isDrawerSpriteDragData(operation.source?.data)) {
@@ -215,18 +260,44 @@ function CanvasWithScene(props: {
 
 			if (clientX === undefined || clientY === undefined) {
 				setIsDropTarget(false);
+				props.onDebugSnapshot?.({
+					lastEvent: 'drag end missing pointer',
+					pointer: 'missing',
+					canvasInside: false,
+					drop: 'rejected: missing pointer',
+				});
+				props.onDebugEvent?.('drop rejected', 'missing pointer');
 				return;
 			}
 
 			const pointerPosition = getCanvasPointerPosition(clientX, clientY);
+			const pointer = `${Math.round(clientX)}, ${Math.round(clientY)}`;
 			setIsDropTarget(false);
+			lastInsideState = false;
 
 			if (canceled || !pointerPosition?.inside) {
+				props.onDebugSnapshot?.({
+					lastEvent: canceled ? 'drag canceled' : 'drop rejected',
+					pointer,
+					canvasInside: pointerPosition?.inside ?? false,
+					drop: canceled ? 'rejected: canceled' : 'rejected: outside canvas',
+				});
+				props.onDebugEvent?.(
+					canceled ? 'drag canceled' : 'drop rejected',
+					canceled ? pointer : `${pointer} outside canvas`,
+				);
 				return;
 			}
 
 			const x = Math.max(0, Math.min(SCENE_WIDTH, snapToGrid(pointerPosition.rawX, props.gridSize)));
 			const y = Math.max(0, Math.min(SCENE_HEIGHT, snapToGrid(pointerPosition.rawY, props.gridSize)));
+			props.onDebugSnapshot?.({
+				lastEvent: 'drop accepted',
+				pointer,
+				canvasInside: true,
+				drop: `${x}, ${y}`,
+			});
+			props.onDebugEvent?.('drop accepted', `${operation.source.data.sprite.key} -> ${x}, ${y}`);
 
 			void placeAsset.mutate({
 				sceneId: props.sceneId,
@@ -467,6 +538,7 @@ function CanvasWithScene(props: {
 		handle?: ResizeHandle,
 	) => {
 		if (asset.locked) {
+			props.onDebugEvent?.('asset edit blocked', asset._id);
 			return;
 		}
 
@@ -493,6 +565,12 @@ function CanvasWithScene(props: {
 			nextRotation: asset.rotation ?? 0,
 			locked: asset.locked ?? false,
 		});
+		props.onDebugSnapshot?.({
+			lastEvent: `asset ${mode} start`,
+			sourceId: asset._id,
+			drop: `${asset.x}, ${asset.y}`,
+		});
+		props.onDebugEvent?.(`asset ${mode} start`, asset._id);
 	};
 
 	return (
