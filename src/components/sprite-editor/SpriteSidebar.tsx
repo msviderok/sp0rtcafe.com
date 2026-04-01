@@ -4,8 +4,8 @@ import { future_genUploader } from 'uploadthing/client-future';
 import type { UploadRouter } from '~/server/uploadthing';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
-import type { DndDebugReporter, DndDebugSnapshotReporter } from './dndDebug';
 import DraggableSprite from './DraggableSprite';
+import GridSizeControl from './GridSizeControl';
 
 const uploadThing = future_genUploader<UploadRouter>({
 	url: '/api/uploadthing',
@@ -70,9 +70,15 @@ export default function SpriteSidebar(props: {
 		height: number;
 		isDefault?: boolean;
 	}>;
+	isOpen: boolean;
 	selectedSceneId?: Id<'scenes'>;
 	sceneName: string;
 	createName: string;
+	gridSize: number;
+	showGrid: boolean;
+	onOpenChange: (value: boolean) => void;
+	onGridSizeChange: (value: number) => void;
+	onToggleGrid: () => void;
 	onSelectScene: (sceneId: Id<'scenes'>) => void;
 	onSceneNameChange: (value: string) => void;
 	onCreateNameChange: (value: string) => void;
@@ -80,9 +86,6 @@ export default function SpriteSidebar(props: {
 	onRenameScene: () => void;
 	onSetDefaultScene: () => void;
 	onDeleteScene: () => void;
-	debugEnabled?: boolean;
-	onDebugEvent?: DndDebugReporter;
-	onDebugSnapshot?: DndDebugSnapshotReporter;
 }) {
 	const sprites = useQuery(api.sprites.list, {});
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
@@ -90,7 +93,6 @@ export default function SpriteSidebar(props: {
 	const activeUploads = useQuery(api.files.listActiveUploads, {});
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
-	const [isOpen, setIsOpen] = createSignal(true);
 	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
 	let fileInputRef: HTMLInputElement | undefined;
@@ -301,30 +303,31 @@ export default function SpriteSidebar(props: {
 
 	return (
 		<aside
-			class={`flex min-h-80 min-w-0 shrink-0 flex-col overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] ${isOpen() ? 'w-full xl:w-72' : 'w-10'}`}
-			onKeyDown={(e) => e.key === 'Escape' && setIsOpen(false)}
+			class={`flex min-h-80 min-w-0 shrink-0 flex-col overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] ${props.isOpen ? 'w-full xl:w-72' : 'w-10'}`}
+			onKeyDown={(e) => e.key === 'Escape' && props.onOpenChange(false)}
 		>
 			{/* Collapsed strip */}
-			<Show when={!isOpen()}>
+			<Show when={!props.isOpen}>
 				<button
 					class="flex h-full min-h-80 w-full cursor-pointer items-center justify-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition hover:bg-accent hover:text-foreground [writing-mode:vertical-rl]"
 					type="button"
-					onClick={() => setIsOpen(true)}
+					onClick={() => props.onOpenChange(true)}
 					aria-label="Open assets panel"
 				>
 					Assets
 				</button>
 			</Show>
-			<Show when={isOpen()}>
+			<Show when={props.isOpen}>
 				<div class="flex items-center justify-between border-b border-border px-4 py-3">
 					<span class="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Editor</span>
 					<button
 						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground"
 						type="button"
-						onClick={() => setIsOpen(false)}
+						onClick={() => props.onOpenChange(false)}
 						aria-label="Collapse"
 					>
 						<svg
+							class="rotate-180"
 							xmlns="http://www.w3.org/2000/svg"
 							width="14"
 							height="14"
@@ -342,6 +345,20 @@ export default function SpriteSidebar(props: {
 				</div>
 
 				<div class="flex-1 overflow-y-auto p-2">
+					<section class="border-b border-border px-3 py-3">
+						<div class="grid gap-3">
+							<div class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Canvas</div>
+							<GridSizeControl gridSize={props.gridSize} onChange={props.onGridSizeChange} />
+							<button
+								class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+								type="button"
+								onClick={props.onToggleGrid}
+							>
+								{props.showGrid ? 'Hide grid' : 'Show grid'}
+							</button>
+						</div>
+					</section>
+
 					<section class="border-b border-border">
 						<button
 							class="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -456,17 +473,46 @@ export default function SpriteSidebar(props: {
 						</button>
 						<Show when={isAssetsSectionOpen()}>
 							<div class="border-t border-border p-2">
+								<input
+									ref={fileInputRef}
+									class="hidden"
+									type="file"
+									accept="image/*"
+									multiple
+									onChange={handleFileSelection}
+								/>
+								<button
+									class="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 text-xs text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
+									type="button"
+									title={isUploading() ? 'Uploading...' : 'Upload new assets'}
+									disabled={isUploading()}
+									onClick={() => fileInputRef?.click()}
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="14"
+										height="14"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										aria-hidden="true"
+									>
+										<path d="M12 5v14" />
+										<path d="M5 12h14" />
+									</svg>
+									{isUploading() ? 'Uploading...' : 'Upload new assets'}
+								</button>
+								<Show when={errorMessage()}>
+									<div class="mb-2 text-[10px] leading-tight text-destructive">{errorMessage()}</div>
+								</Show>
+
 								<Show when={!sprites.isLoading()} fallback={<div class="p-2 text-xs text-muted-foreground">...</div>}>
 									<div class="flex flex-col gap-0.5">
 										<For each={sortedSprites()}>
-											{(sprite) => (
-												<DraggableSprite
-													sprite={sprite}
-													debugEnabled={props.debugEnabled}
-													onDebugEvent={props.onDebugEvent}
-													onDebugSnapshot={props.onDebugSnapshot}
-												/>
-											)}
+											{(sprite) => <DraggableSprite sprite={sprite} />}
 										</For>
 									</div>
 								</Show>
@@ -503,44 +549,6 @@ export default function SpriteSidebar(props: {
 							</div>
 						</Show>
 					</section>
-				</div>
-
-				<div class="border-t border-border p-2">
-					<input
-						ref={fileInputRef}
-						class="hidden"
-						type="file"
-						accept="image/*"
-						multiple
-						onChange={handleFileSelection}
-					/>
-					<button
-						class="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 text-xs text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
-						type="button"
-						title={isUploading() ? 'Uploading...' : 'Upload new assets'}
-						disabled={isUploading()}
-						onClick={() => fileInputRef?.click()}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="14"
-							height="14"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M12 5v14" />
-							<path d="M5 12h14" />
-						</svg>
-						{isUploading() ? 'Uploading...' : 'Upload new assets'}
-					</button>
-					<Show when={errorMessage()}>
-						<div class="mt-1 text-[10px] leading-tight text-destructive">{errorMessage()}</div>
-					</Show>
 				</div>
 			</Show>
 		</aside>

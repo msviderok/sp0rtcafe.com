@@ -19,3 +19,27 @@ export const Collapsible = {
     }
   ),
 };
+
+export const Popover = {
+  Root: clientOnly(async () => ({ default: (await import("./popover")).Popover }), {
+    lazy: true,
+  }),
+  Trigger: clientOnly(async () => ({ default: (await import("./popover")).PopoverTrigger }), {
+    lazy: true,
+  }),
+  Content: clientOnly(async () => ({ default: (await import("./popover")).PopoverContent }), {
+    lazy: true,
+  }),
+  Header: clientOnly(async () => ({ default: (await import("./popover")).PopoverHeader }), {
+    lazy: true,
+  }),
+  Title: clientOnly(async () => ({ default: (await import("./popover")).PopoverTitle }), {
+    lazy: true,
+  }),
+  Description: clientOnly(
+    async () => ({ default: (await import("./popover")).PopoverDescription }),
+    {
+      lazy: true,
+    }
+  ),
+};

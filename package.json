@@ -19,6 +19,7 @@
     "@solidjs/router": "^0.16.1",
     "@solidjs/start": "2.0.0-alpha.2",
     "@solidjs/vite-plugin-nitro-2": "^0.1.0",
+    "@tanstack/solid-hotkeys": "^0.9.1",
     "@uploadthing/solid": "^7.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

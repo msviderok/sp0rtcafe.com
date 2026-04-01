@@ -1,5 +1,28 @@
+import type { JSXElement } from "solid-js";
+import { Popover } from "~/components/ui";
 import { getSpriteBackgroundStyle } from "~/lib/sceneStyles";
 import { cn } from "~/lib/utils";
+
+const IconSliders = () => (
+  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M136,80v24a8,8,0,0,1-16,0V80a8,8,0,0,1,16,0Zm48,48a8,8,0,0,0-8,8v16H40a8,8,0,0,0,0,16H176v16a8,8,0,0,0,16,0V136A8,8,0,0,0,184,128Zm-80,24H40a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Zm112-96H152a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16ZM112,56a8,8,0,0,0-8,8v16H40a8,8,0,0,0,0,16h64v16a8,8,0,0,0,16,0V64A8,8,0,0,0,112,56Z" />
+  </svg>
+);
+const IconLock = () => (
+  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z" />
+  </svg>
+);
+const IconLockOpen = () => (
+  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M208,80H96V56a32,32,0,0,1,32-32c15.37,0,29.2,11,32.16,25.59a8,8,0,0,0,15.68-3.18C171.32,24.15,151.2,8,128,8A48.05,48.05,0,0,0,80,56V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80Zm0,128H48V96H208V208Z" />
+  </svg>
+);
+const IconTrash = () => (
+  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 256 256" fill="currentColor">
+    <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
+  </svg>
+);
 
 export type SceneSprite = {
   url: string;
@@ -17,11 +40,13 @@ export default function PlacedSprite(props: {
   sprite: SceneSprite;
   x: number;
   y: number;
+  zIndex: number;
   rotation: number;
   locked: boolean;
   canResizeFreely: boolean;
   selectionMode: "none" | "single" | "multi";
   isStyleEditorOpen: boolean;
+  styleEditorContent?: JSXElement;
   onSelect: (event: PointerEvent) => void;
   onMoveStart: (event: PointerEvent) => void;
   onResizeStart: (handle: EdgeResizeHandle, event: PointerEvent) => void;
@@ -38,6 +63,7 @@ export default function PlacedSprite(props: {
         top: `${props.y}px`,
         width: `${props.sprite.width}px`,
         height: `${props.sprite.height}px`,
+        "z-index": props.zIndex,
         transform: `rotate(${props.rotation}deg)`,
       }}
     >
@@ -63,20 +89,44 @@ export default function PlacedSprite(props: {
             }}
           />
 
-          <div class="absolute -top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-white/70">
-            <button
-              class="rounded-full px-2 py-1 transition hover:bg-white/10"
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onToggleStyleEditor();
+          <div class="absolute -top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/80 px-1 py-0.5 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-sm">
+            <Popover.Root
+              open={props.isStyleEditorOpen}
+              onOpenChange={(open) => {
+                if (open !== props.isStyleEditorOpen) props.onToggleStyleEditor();
               }}
             >
-              {props.isStyleEditorOpen ? "Close style" : "Style"}
-            </button>
+              <Popover.Trigger
+                class={cn(
+                  "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                  props.isStyleEditorOpen
+                    ? "bg-white/15 text-white"
+                    : "text-white/60 hover:bg-white/8 hover:text-white/90"
+                )}
+                onPointerDown={(event: PointerEvent) => event.stopPropagation()}
+                onClick={(event: MouseEvent) => event.stopPropagation()}
+              >
+                <IconSliders />
+                Style
+              </Popover.Trigger>
+              <Popover.Content
+                side="top"
+                sideOffset={12}
+                class="w-64 rounded-xl border border-white/6 bg-[#1a1a1a]/95 p-3 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] ring-0 backdrop-blur-xl"
+              >
+                {props.styleEditorContent}
+              </Popover.Content>
+            </Popover.Root>
+
+            <div class="mx-0.5 h-3.5 w-px bg-white/10" />
+
             <button
-              class="rounded-full px-2 py-1 transition hover:bg-white/10"
+              class={cn(
+                "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.locked
+                  ? "bg-amber-500/15 text-amber-300/90"
+                  : "text-white/60 hover:bg-white/8 hover:text-white/90"
+              )}
               type="button"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
@@ -84,20 +134,27 @@ export default function PlacedSprite(props: {
                 props.onToggleLock();
               }}
             >
-              {props.locked ? "Unlock" : "Lock"}
+              {props.locked ? <IconLock /> : <IconLockOpen />}
+              {props.locked ? "Locked" : "Lock"}
             </button>
+
+            <div class="mx-0.5 h-3.5 w-px bg-white/10" />
+
             <button
-              class={`rounded-full px-2 py-1 transition hover:bg-white/10 ${props.locked ? "cursor-not-allowed text-white/30" : "text-rose-200"}`}
+              class={cn(
+                "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.locked
+                  ? "cursor-not-allowed text-white/20"
+                  : "text-white/60 hover:bg-rose-500/15 hover:text-rose-300"
+              )}
               type="button"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
-                if (!props.locked) {
-                  props.onDelete();
-                }
+                if (!props.locked) props.onDelete();
               }}
             >
-              Delete
+              <IconTrash />
             </button>
           </div>
 

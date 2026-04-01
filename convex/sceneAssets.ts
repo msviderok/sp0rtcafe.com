@@ -15,6 +15,10 @@ function getMeaningfulSpriteSize(sprite: { width: number; height: number }) {
   };
 }
 
+function getAssetOrderValue(asset: { zIndex?: number; _creationTime: number }) {
+  return asset.zIndex ?? asset._creationTime;
+}
+
 export const listByScene = query({
   args: { sceneId: v.id("scenes") },
   handler: async (ctx, args) => {
@@ -32,6 +36,7 @@ export const listByScene = query({
 
         return {
           ...asset,
+          zIndex: getAssetOrderValue(asset),
           rotation: asset.rotation ?? 0,
           locked: asset.locked ?? false,
           sprite,
@@ -39,7 +44,9 @@ export const listByScene = query({
       }),
     );
 
-    return assetsWithSprites.filter((asset) => asset !== null);
+    return assetsWithSprites
+      .filter((asset) => asset !== null)
+      .sort((left, right) => left.zIndex - right.zIndex || left._creationTime - right._creationTime);
   },
 });
 
@@ -57,6 +64,14 @@ export const place = mutation({
       throw new Error("Sprite not found");
     }
 
+    const sceneAssets = await ctx.db
+      .query("sceneAssets")
+      .withIndex("by_sceneId", (q) => q.eq("sceneId", args.sceneId))
+      .take(500);
+    const maxZIndex = sceneAssets.reduce(
+      (currentMax, asset) => Math.max(currentMax, getAssetOrderValue(asset)),
+      0,
+    );
     const size = getMeaningfulSpriteSize(sprite);
 
     return await ctx.db.insert("sceneAssets", {
@@ -66,6 +81,7 @@ export const place = mutation({
       y: args.y,
       width: size.width,
       height: size.height,
+      zIndex: maxZIndex + 1,
       rotation: 0,
       locked: false,
     });
@@ -79,6 +95,7 @@ export const update = mutation({
     y: v.optional(v.number()),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
+    zIndex: v.optional(v.number()),
     rotation: v.optional(v.number()),
     locked: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
@@ -97,6 +114,7 @@ export const update = mutation({
       y?: number;
       width?: number;
       height?: number;
+      zIndex?: number;
       rotation?: number;
       locked?: boolean;
       bgRepeat?: string;
@@ -115,6 +133,9 @@ export const update = mutation({
     }
     if (args.height !== undefined) {
       patch.height = args.height;
+    }
+    if (args.zIndex !== undefined) {
+      patch.zIndex = args.zIndex;
     }
     if (args.rotation !== undefined) {
       patch.rotation = args.rotation;
@@ -159,6 +180,7 @@ export const restore = mutation({
     y: v.number(),
     width: v.number(),
     height: v.number(),
+    zIndex: v.number(),
     rotation: v.number(),
     locked: v.boolean(),
     bgRepeat: v.optional(v.string()),
@@ -167,5 +189,28 @@ export const restore = mutation({
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sceneAssets", args);
+  },
+});
+
+export const reorder = mutation({
+  args: {
+    updates: v.array(
+      v.object({
+        assetId: v.id("sceneAssets"),
+        zIndex: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    for (const update of args.updates) {
+      const asset = await ctx.db.get(update.assetId);
+      if (!asset) {
+        continue;
+      }
+
+      await ctx.db.patch(update.assetId, {
+        zIndex: update.zIndex,
+      });
+    }
   },
 });

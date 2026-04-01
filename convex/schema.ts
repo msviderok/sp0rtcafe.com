@@ -52,6 +52,7 @@ export default defineSchema({
     y: v.number(),
     width: v.number(),
     height: v.number(),
+    zIndex: v.optional(v.number()),
     rotation: v.optional(v.number()),
     locked: v.optional(v.boolean()),
     bgRepeat: v.optional(v.string()),
