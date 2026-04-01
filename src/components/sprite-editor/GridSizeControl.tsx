@@ -1,21 +1,25 @@
+import { Slider } from '~/components/ui';
+
 export default function GridSizeControl(props: { gridSize: number; onChange: (value: number) => void }) {
 	return (
-		<label class="flex items-center gap-3 rounded-full border border-white/10 bg-black/30 px-4 py-2 text-xs uppercase tracking-[0.22em] text-white/70">
+		<div class="flex items-center gap-3 rounded-full border border-border bg-muted/30 px-4 py-2 text-xs uppercase tracking-[0.22em] text-muted-foreground">
 			Grid
-			<input
-				class="w-20 rounded-md border border-white/10 bg-white/10 px-2 py-1 text-sm tracking-normal text-white outline-none"
-				min="8"
-				max="128"
-				step="8"
-				type="number"
-				value={props.gridSize}
-				onInput={(event) => {
-					const nextValue = Number(event.currentTarget.value);
-					if (Number.isFinite(nextValue) && nextValue > 0) {
-						props.onChange(nextValue);
-					}
-				}}
-			/>
-		</label>
+			<span class="w-24">
+				<Slider
+					fallback={<div class="h-3 w-full rounded-md bg-muted/80" role="presentation" />}
+					min={8}
+					max={128}
+					step={8}
+					value={[props.gridSize]}
+					onValueChange={(values) => {
+						const next = Array.isArray(values) ? values[0] : values;
+						if (next !== undefined && next > 0) {
+							props.onChange(next);
+						}
+					}}
+				/>
+			</span>
+			<span class="w-8 text-center text-sm tabular-nums tracking-normal text-foreground">{props.gridSize}</span>
+		</div>
 	);
 }

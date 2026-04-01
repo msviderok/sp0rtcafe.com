@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from 'convex-solidjs';
 import { future_genUploader } from 'uploadthing/client-future';
-import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
+import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { UploadRouter } from '~/server/uploadthing';
 import DraggableSprite from './DraggableSprite';
@@ -60,14 +60,13 @@ function compactUploadRecord(record: {
 	};
 }
 
-export default function SpriteDrawer(props: { open: boolean; onClose: () => void }) {
+export default function SpriteSidebar() {
 	const sprites = useQuery(api.sprites.list, {});
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
 	const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
 	const activeUploads = useQuery(api.files.listActiveUploads, {});
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
-	const [didBackfillSprites, setDidBackfillSprites] = createSignal(false);
 	let fileInputRef: HTMLInputElement | undefined;
 
 	const sortedSprites = createMemo(() =>
@@ -75,12 +74,7 @@ export default function SpriteDrawer(props: { open: boolean; onClose: () => void
 	);
 	const visibleUploads = createMemo(() => activeUploads.data() ?? []);
 
-	createEffect(() => {
-		if (!props.open || didBackfillSprites()) {
-			return;
-		}
-
-		setDidBackfillSprites(true);
+	onMount(() => {
 		void syncUploadedSprites.mutate({ limit: 200 });
 	});
 
@@ -279,78 +273,55 @@ export default function SpriteDrawer(props: { open: boolean; onClose: () => void
 	};
 
 	return (
-		<>
-			<aside
-				class="fixed right-0 top-0 z-40 flex h-screen w-[360px] max-w-[92vw] flex-col border-l border-white/10 bg-[#17110d]/95 text-white shadow-2xl transition-transform duration-200"
-				style={{
-					transform: props.open ? 'translateX(0)' : 'translateX(100%)',
-				}}
-			>
-				<div class="flex justify-end px-5 pt-4">
-					<button
-						class="rounded-full border border-white/10 px-3 py-1 text-sm text-white/70 transition hover:bg-white/10"
-						type="button"
-						onClick={props.onClose}
-					>
-						Collapse
-					</button>
-				</div>
+		<aside class="fixed right-0 top-0 z-40 flex h-screen w-20 flex-col border-l border-border bg-background/80 backdrop-blur-sm">
+			<div class="flex-1 overflow-y-auto overflow-x-hidden p-2">
+				<Show when={!sprites.isLoading()} fallback={<div class="p-2 text-xs text-muted-foreground">...</div>}>
+					<div class="flex flex-wrap gap-1">
+						<For each={sortedSprites()}>{(sprite) => <DraggableSprite sprite={sprite} />}</For>
+					</div>
+				</Show>
 
-				<div class="border-b border-white/10 px-5 py-4">
-					<input
-						ref={fileInputRef}
-						class="hidden"
-						type="file"
-						accept="image/*"
-						multiple
-						onChange={handleFileSelection}
-					/>
-					<button
-						class="w-full rounded-xl border-0 bg-[#f2bb55] px-3 py-2 text-sm font-semibold text-[#2d190f] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
-						type="button"
-						disabled={isUploading()}
-						onClick={() => fileInputRef?.click()}
-					>
-						{isUploading() ? 'Uploading...' : 'Upload images'}
-					</button>
-					<Show when={errorMessage()}>
-						<div class="text-xs text-amber-200/90">{errorMessage()}</div>
-					</Show>
-					<Show when={visibleUploads().length > 0}>
-						<div class="mt-3 space-y-2">
-							<For each={visibleUploads()}>
-								{(file) => (
-									<div class="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
-										<div class="flex items-center justify-between gap-3">
-											<div class="truncate text-white/90">{file.fileName}</div>
-											<div>{file.status === 'failed' ? 'failed' : `${file.progress}%`}</div>
-										</div>
-										<Show when={file.status !== 'failed'}>
-											<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-												<div
-													class="h-full rounded-full bg-[#f2bb55] transition-[width] duration-150"
-													style={{ width: `${file.progress}%` }}
-												/>
-											</div>
-										</Show>
-										<Show when={file.error}>
-											<div class="mt-2 truncate text-[11px] text-amber-200/80">{file.error}</div>
-										</Show>
-									</div>
-								)}
-							</For>
-						</div>
-					</Show>
-				</div>
+				<Show when={visibleUploads().length > 0}>
+					<div class="mt-2 space-y-1 px-1">
+						<For each={visibleUploads()}>
+							{(file) => (
+								<div class="relative h-12 w-12 rounded-lg bg-muted" title={file.fileName}>
+									<div
+										class="absolute inset-x-0 bottom-0 h-1 rounded-b-lg bg-primary transition-[width] duration-150"
+										style={{ width: `${file.progress}%` }}
+									/>
+									<Show when={file.status === 'failed'}>
+										<div class="flex h-full items-center justify-center text-[10px] text-destructive">!</div>
+									</Show>
+								</div>
+							)}
+						</For>
+					</div>
+				</Show>
+			</div>
 
-				<div class="flex-1 overflow-y-auto px-5 py-4">
-					<Show when={!sprites.isLoading()} fallback={<div class="text-sm text-white/55">Loading sprites...</div>}>
-						<div class="grid grid-cols-2 gap-3">
-							<For each={sortedSprites()}>{(sprite) => <DraggableSprite sprite={sprite} />}</For>
-						</div>
-					</Show>
-				</div>
-			</aside>
-		</>
+			<div class="border-t border-border p-2">
+				<input
+					ref={fileInputRef}
+					class="hidden"
+					type="file"
+					accept="image/*"
+					multiple
+					onChange={handleFileSelection}
+				/>
+				<button
+					class="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-muted-foreground/30 text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
+					type="button"
+					title={isUploading() ? 'Uploading...' : 'Upload images'}
+					disabled={isUploading()}
+					onClick={() => fileInputRef?.click()}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+				</button>
+				<Show when={errorMessage()}>
+					<div class="mt-1 text-[10px] leading-tight text-destructive">{errorMessage()}</div>
+				</Show>
+			</div>
+		</aside>
 	);
 }

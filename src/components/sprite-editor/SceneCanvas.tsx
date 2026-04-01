@@ -76,13 +76,13 @@ export default function SceneCanvas(props: {
 		<section class="flex min-w-0 flex-1 flex-col gap-4">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
-					<div class="text-xs uppercase tracking-[0.28em] text-white/45">Scene canvas</div>
-					<h1 class="text-2xl font-semibold text-white">Main scene</h1>
+					<div class="text-xs uppercase tracking-[0.28em] text-muted-foreground">Scene canvas</div>
+					<h1 class="text-2xl font-semibold text-foreground">Main scene</h1>
 				</div>
 				<div class="flex flex-wrap items-center gap-3">
 					<GridSizeControl gridSize={props.gridSize} onChange={props.onGridSizeChange} />
 					<button
-						class="rounded-full border border-white/10 bg-black/30 px-4 py-2 text-xs uppercase tracking-[0.22em] text-white/70 transition hover:bg-white/10"
+						class="rounded-full border border-border bg-muted/30 px-4 py-2 text-xs uppercase tracking-[0.22em] text-muted-foreground transition hover:bg-accent"
 						type="button"
 						onClick={props.onToggleGrid}
 					>
@@ -91,7 +91,7 @@ export default function SceneCanvas(props: {
 				</div>
 			</div>
 
-			<div class="overflow-auto rounded-[28px] border border-white/10 bg-black/25 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
+			<div class="overflow-auto rounded-[28px] border border-border bg-muted/25 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
 				<Show when={props.sceneId} fallback={<CanvasFrame gridSize={props.gridSize} showGrid={showGrid()} />}>
 					{(sceneId) => (
 						<CanvasWithScene
@@ -507,7 +507,7 @@ function CanvasWithScene(props: {
 		>
 			<Show
 				when={!assets.isLoading()}
-				fallback={<div class="absolute left-6 top-6 text-sm text-white/55">Loading scene...</div>}
+				fallback={<div class="absolute left-6 top-6 text-sm text-muted-foreground">Loading scene...</div>}
 			>
 				<For each={placedAssets()}>
 					{(asset) =>
@@ -616,7 +616,7 @@ function CanvasFrame(props: {
 	return (
 		<div
 			ref={props.ref}
-			class={`relative overflow-hidden rounded-[24px] border bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)] transition-colors ${props.isDropTarget ? 'border-[#f2bb55]/70 shadow-[0_0_0_1px_rgba(242,187,85,0.3),0_0_42px_rgba(242,187,85,0.16)]' : 'border-white/10'}`}
+			class={`relative overflow-hidden rounded-[24px] border bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)] transition-colors ${props.isDropTarget ? 'border-primary/70 shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent),0_0_42px_color-mix(in_oklch,var(--primary)_16%,transparent)]' : 'border-border'}`}
 			style={{
 				width: `${SCENE_WIDTH}px`,
 				height: `${SCENE_HEIGHT}px`,
