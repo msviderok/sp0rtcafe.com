@@ -8,7 +8,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import type { DndDebugReporter, DndDebugSnapshotReporter } from "./dndDebug";
 import GridOverlay from "./GridOverlay";
 import PlacedSprite from "./PlacedSprite";
-import { isDrawerSpriteDragData, type DrawerSprite } from "./spriteDrag";
+import { type DrawerSprite, isDrawerSpriteDragData } from "./spriteDrag";
 
 const SCENE_WIDTH = 1920;
 const SCENE_HEIGHT = 1000;
@@ -1511,7 +1511,7 @@ function CanvasWithScene(props: {
             }}
           >
             <div
-              class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)] ${ghost().pending ? "" : "brightness-125"}`}
+              class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] ${ghost().pending ? "" : "brightness-125"}`}
               style={getSpriteBackgroundStyle(ghost().sprite)}
             />
             <Show when={!ghost().pending}>
@@ -1573,24 +1573,29 @@ function CanvasWithScene(props: {
                   styleEditorContent={
                     <Show when={styleEditorAssetId() === asset._id ? asset : null}>
                       {(a) => (
-                        <div class="grid gap-3">
+                        <div class="flex flex-col gap-2">
                           <div class="flex items-start gap-2.5">
                             <div
                               class="size-9 shrink-0 rounded-md border border-white/8 bg-white/5 bg-contain bg-center bg-no-repeat"
                               style={{ "background-image": `url(${a().sprite.url})` }}
                             />
                             <div class="min-w-0">
-                              <div class="truncate text-[13px] font-medium leading-tight">{a().sprite.key}</div>
+                              <div class="truncate text-[13px] font-medium leading-tight">
+                                {a().sprite.key}
+                              </div>
                               <div class="mt-0.5 text-[10px] tabular-nums text-white/35">
-                                {getAssetView(a()).width} x {getAssetView(a()).height} · layer {getAssetView(a()).zIndex}
+                                {getAssetView(a()).width} x {getAssetView(a()).height} · layer{" "}
+                                {getAssetView(a()).zIndex}
                               </div>
                             </div>
                           </div>
 
                           <div class="h-px bg-white/6" />
 
-                          <div class="grid gap-1">
-                            <div class="text-[10px] uppercase tracking-widest text-white/30">Presets</div>
+                          <div class="flex flex-col gap-1">
+                            <div class="text-[10px] uppercase tracking-widest text-white/30">
+                              Presets
+                            </div>
                             <div class="flex flex-wrap gap-1">
                               <For each={["2x2", "4x2", "fill", "wall", "ground"] as const}>
                                 {(preset) => (
@@ -1608,13 +1613,15 @@ function CanvasWithScene(props: {
 
                           <div class="h-px bg-white/6" />
 
-                          <div class="grid gap-1">
-                            <div class="text-[10px] uppercase tracking-widest text-white/30">Size</div>
-                            <div class="grid grid-cols-[1fr_1fr_auto] items-end gap-1.5">
-                              <label class="grid gap-0.5 text-[10px] text-white/40">
+                          <div class="flex gap-1">
+                            <div class="text-[10px] uppercase tracking-widest text-white/30">
+                              Size
+                            </div>
+                            <div class="flex gap-1">
+                              <label class="text-[10px] text-white/40">
                                 W
                                 <input
-                                  class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs tabular-nums text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
+                                  class="h-7 rounded-sm border border-white/6 bg-white/4 px-2 text-xs tabular-nums text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
                                   value={widthDraft()}
                                   inputmode="numeric"
                                   onInput={(event) => setWidthDraft(event.currentTarget.value)}
@@ -1642,7 +1649,9 @@ function CanvasWithScene(props: {
                           <div class="h-px bg-white/6" />
 
                           <div class="grid gap-1">
-                            <div class="text-[10px] uppercase tracking-widest text-white/30">Background</div>
+                            <div class="text-[10px] uppercase tracking-widest text-white/30">
+                              Background
+                            </div>
                             <div class="grid gap-1.5">
                               <select
                                 class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs text-white outline-none transition focus:border-white/20 focus:bg-white/6"
@@ -1663,7 +1672,9 @@ function CanvasWithScene(props: {
                                     class="h-7 rounded-md border border-white/6 bg-white/4 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/20 focus:bg-white/6"
                                     value={bgPositionDraft()}
                                     placeholder="center"
-                                    onInput={(event) => setBgPositionDraft(event.currentTarget.value)}
+                                    onInput={(event) =>
+                                      setBgPositionDraft(event.currentTarget.value)
+                                    }
                                   />
                                 </label>
                                 <label class="grid gap-0.5 text-[10px] text-white/40">
@@ -1799,7 +1810,7 @@ function CanvasFrame(props: {
   return (
     <div
       ref={props.ref}
-      class={`relative overflow-hidden rounded-none border ${props.isDropTarget ? "border-primary/70 shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent),0_0_42px_color-mix(in_oklch,var(--primary)_16%,transparent)]" : "border-border"}`}
+      class={`relative overflow-hidden rounded-none border ${props.isDropTarget ? "border-primary/70 bg-primary/[0.03]" : "border-border"}`}
       style={{
         width: `${SCENE_WIDTH}px`,
         height: `${SCENE_HEIGHT}px`,
@@ -1807,8 +1818,8 @@ function CanvasFrame(props: {
       onPointerDown={props.onPointerDown}
     >
       <GridOverlay gridSize={props.gridSize} visible={props.showGrid} />
-      <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.16)_18%,rgba(0,0,0,0.48)_100%)]" />
-      <div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,244,214,0.08)_0%,transparent_100%)]" />
+      <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
+      <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
       {props.children}
     </div>
   );

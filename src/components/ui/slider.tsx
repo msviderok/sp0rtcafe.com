@@ -39,7 +39,7 @@ function Slider(componentProps: SliderPrimitive.Root.Props) {
           {() => (
             <SliderPrimitive.Thumb
               data-slot="slider-thumb"
-              class="block size-4 shrink-0 rounded-md border border-primary bg-white shadow-sm ring-ring/30 transition-colors select-none hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+              class="block size-4 shrink-0 rounded-md border border-primary bg-white transition-colors select-none hover:border-primary/80 focus-visible:outline-2 focus-visible:outline-primary/40 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50"
             />
           )}
         </For>

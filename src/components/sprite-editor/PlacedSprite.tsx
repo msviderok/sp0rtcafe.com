@@ -68,7 +68,7 @@ export default function PlacedSprite(props: {
       }}
     >
       <div
-        class="absolute inset-0 z-10 bg-no-repeat bg-size-[100%_100%] drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)] touch-none"
+        class="absolute inset-0 z-10 bg-no-repeat bg-size-[100%_100%] touch-none"
         style={getSpriteBackgroundStyle(props.sprite)}
         onPointerDown={(event) => {
           event.stopPropagation();
@@ -85,11 +85,10 @@ export default function PlacedSprite(props: {
             class="pointer-events-none absolute inset-0 z-30 border-2 border-solid"
             style={{
               "border-color": "rgb(255 217 122 / 1)",
-              "box-shadow": "0 0 0 1px rgb(0 0 0 / 0.5), 0 0 18px rgb(255 201 102 / 0.28)",
             }}
           />
 
-          <div class="absolute -top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/80 px-1 py-0.5 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-sm">
+          <div class="absolute -top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/80 px-1 py-0.5 backdrop-blur-sm">
             <Popover.Root
               open={props.isStyleEditorOpen}
               onOpenChange={(open) => {
@@ -112,7 +111,7 @@ export default function PlacedSprite(props: {
               <Popover.Content
                 side="top"
                 sideOffset={12}
-                class="w-64 rounded-xl border border-white/6 bg-[#1a1a1a]/95 p-3 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] ring-0 backdrop-blur-xl"
+                class="w-64 rounded-xl border border-white/6 bg-[#1a1a1a]/95 p-3 text-white backdrop-blur-xl"
               >
                 {props.styleEditorContent}
               </Popover.Content>
@@ -258,7 +257,6 @@ export default function PlacedSprite(props: {
           class="pointer-events-none absolute inset-0 z-30 border-2 border-solid"
           style={{
             "border-color": "rgb(255 217 122 / 1)",
-            "box-shadow": "0 0 0 1px rgb(0 0 0 / 0.5), 0 0 18px rgb(255 201 102 / 0.28)",
           }}
         />
       ) : null}

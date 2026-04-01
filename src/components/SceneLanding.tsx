@@ -8,7 +8,7 @@ export default function SceneLanding() {
 	const defaultScene = useQuery(api.scenes.getDefault, {});
 
 	return (
-		<main class="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,215,170,0.14),_transparent_30%),linear-gradient(180deg,#2b1d16_0%,#140d0b_100%)] px-4 py-8 text-foreground">
+		<main class="min-h-screen bg-[#140d0b] px-4 py-8 text-foreground">
 			<div class="mx-auto mb-6 flex max-w-[2200px] items-center justify-end">
 				<a
 					class="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.22em] text-white/70 transition hover:bg-white/10 hover:text-white"
@@ -19,10 +19,20 @@ export default function SceneLanding() {
 			</div>
 
 			<div class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[2200px] items-center justify-center">
+				<Show when={!defaultScene.isLoading()} fallback={
+					<div class="flex flex-col items-center gap-4">
+						<div class="flex gap-1.5">
+							<div class="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:0ms]" />
+							<div class="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:150ms]" />
+							<div class="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:300ms]" />
+						</div>
+						<p class="text-xs uppercase tracking-[0.22em] text-white/30">Loading scene</p>
+					</div>
+				}>
 				<Show
 					when={defaultScene.data()}
 					fallback={
-						<div class="flex max-w-md flex-col items-center gap-4 rounded-[32px] border border-white/10 bg-black/20 px-8 py-10 text-center shadow-[0_40px_140px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+						<div class="flex max-w-md flex-col items-center gap-4 rounded-[32px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
 							<div class="text-xs uppercase tracking-[0.22em] text-white/45">No scene yet</div>
 							<div class="text-sm text-white/70">Create a scene first, then set it as default.</div>
 							<a
@@ -36,6 +46,7 @@ export default function SceneLanding() {
 				>
 					{(scene) => <LandingScene sceneId={scene()._id} width={scene().width} height={scene().height} />}
 				</Show>
+				</Show>
 			</div>
 		</main>
 	);
@@ -45,16 +56,16 @@ function LandingScene(props: { sceneId: Id<'scenes'>; width: number; height: num
 	const assets = useQuery(api.sceneAssets.listByScene, { sceneId: props.sceneId });
 
 	return (
-		<div class="overflow-auto rounded-[32px] border border-white/10 bg-black/20 p-4 shadow-[0_40px_140px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+		<div class="overflow-auto rounded-[32px] border border-white/10 bg-black/20 p-4 backdrop-blur-sm">
 			<div
-				class="relative overflow-hidden rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(255,214,153,0.14),_transparent_35%),linear-gradient(180deg,#34231b_0%,#1e1512_48%,#140d0b_100%)]"
+				class="relative overflow-hidden rounded-[24px] border border-white/10 bg-[#1e1512]"
 				style={{
 					width: `${props.width}px`,
 					height: `${props.height}px`,
 				}}
 			>
-				<div class="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.16)_18%,rgba(0,0,0,0.48)_100%)]" />
-				<div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,244,214,0.08)_0%,transparent_100%)]" />
+				<div class="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-black/30" />
+				<div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-white/[0.04]" />
 
 				<Show
 					when={!assets.isLoading()}
@@ -63,7 +74,7 @@ function LandingScene(props: { sceneId: Id<'scenes'>; width: number; height: num
 					<For each={assets.data() ?? []}>
 						{(asset) => (
 							<div
-								class="absolute drop-shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
+								class="absolute"
 								style={{
 									left: `${asset.x}px`,
 									top: `${asset.y}px`,
