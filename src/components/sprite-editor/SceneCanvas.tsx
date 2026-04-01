@@ -62,6 +62,14 @@ type EditingAsset = {
 	locked: boolean;
 };
 
+type Marquee = { startX: number; startY: number; endX: number; endY: number };
+
+type BulkMoveState = {
+	startClientX: number;
+	startClientY: number;
+	startPositions: Record<string, { x: number; y: number }>;
+};
+
 export default function SceneCanvas(props: {
 	sceneId?: Id<'scenes'>;
 	gridSize: number;
@@ -135,13 +143,24 @@ function CanvasWithScene(props: {
 	const removeAsset = useMutation(api.sceneAssets.remove);
 	const restoreAsset = useMutation(api.sceneAssets.restore);
 
-	const [selectedAssetId, setSelectedAssetId] = createSignal<Id<'sceneAssets'> | null>(null);
+	const [selectedAssetIds, setSelectedAssetIds] = createSignal<Set<Id<'sceneAssets'>>>(new Set());
 	const [localTransforms, setLocalTransforms] = createSignal<Record<string, LocalTransform>>({});
 	const [editingAsset, setEditingAsset] = createSignal<EditingAsset | null>(null);
 	const [deletedStack, setDeletedStack] = createSignal<DeletedAssetSnapshot[]>([]);
 	const [isDropTarget, setIsDropTarget] = createSignal(false);
 	const [dragGhost, setDragGhost] = createSignal<{ x: number; y: number; sprite: DrawerSprite; pending: boolean } | null>(null);
+	const [marquee, setMarquee] = createSignal<Marquee | null>(null);
+	const [bulkMove, setBulkMove] = createSignal<BulkMoveState | null>(null);
 	let assetsCountAtDrop = -1;
+
+	// Derived: single selected asset id (when exactly one selected)
+	const singleSelectedId = createMemo(() => {
+		const ids = selectedAssetIds();
+		if (ids.size === 1) {
+			return [...ids][0];
+		}
+		return null;
+	});
 
 	const placedAssets = createMemo(() => assets.data() ?? []);
 
@@ -346,6 +365,18 @@ function CanvasWithScene(props: {
 		},
 	});
 
+	const getAssetView = (asset: { _id: Id<'sceneAssets'>; x: number; y: number; width: number; height: number; rotation?: number; locked?: boolean }) => {
+		const local = localTransforms()[asset._id];
+		return {
+			x: local?.x ?? asset.x,
+			y: local?.y ?? asset.y,
+			width: local?.width ?? asset.width,
+			height: local?.height ?? asset.height,
+			rotation: local?.rotation ?? asset.rotation ?? 0,
+			locked: local?.locked ?? asset.locked ?? false,
+		};
+	};
+
 	const deleteAsset = (
 		asset: {
 			_id: Id<'sceneAssets'>;
@@ -367,7 +398,11 @@ function CanvasWithScene(props: {
 				locked: view.locked,
 			},
 		]);
-		setSelectedAssetId(null);
+		setSelectedAssetIds((prev) => {
+			const next = new Set(prev);
+			next.delete(asset._id);
+			return next;
+		});
 		setLocalTransforms((current) => {
 			const next = { ...current };
 			delete next[asset._id];
@@ -376,8 +411,26 @@ function CanvasWithScene(props: {
 		void removeAsset.mutate({ assetId: asset._id });
 	};
 
+	const bulkDelete = () => {
+		const ids = selectedAssetIds();
+		const all = placedAssets();
+		for (const id of ids) {
+			const asset = all.find((a) => a._id === id);
+			if (!asset) continue;
+			const view = getAssetView(asset);
+			if (view.locked) continue;
+			deleteAsset(asset, view);
+		}
+		setSelectedAssetIds(new Set());
+	};
+
 	createEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				setSelectedAssetIds(new Set());
+				return;
+			}
+
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
 				const snapshots = deletedStack();
 				const latest = snapshots.at(-1);
@@ -395,7 +448,17 @@ function CanvasWithScene(props: {
 				return;
 			}
 
-			const assetId = selectedAssetId();
+			const ids = selectedAssetIds();
+
+			// Bulk delete
+			if (ids.size > 1) {
+				event.preventDefault();
+				bulkDelete();
+				return;
+			}
+
+			// Single delete
+			const assetId = singleSelectedId();
 			if (!assetId) {
 				return;
 			}
@@ -425,6 +488,7 @@ function CanvasWithScene(props: {
 		onCleanup(() => window.removeEventListener('keydown', handleKeyDown));
 	});
 
+	// Single-asset edit effect (unchanged)
 	createEffect(() => {
 		const currentEdit = editingAsset();
 		if (!currentEdit) {
@@ -561,6 +625,141 @@ function CanvasWithScene(props: {
 		});
 	});
 
+	// Marquee effect
+	createEffect(() => {
+		const currentMarquee = marquee();
+		if (!currentMarquee) {
+			return;
+		}
+
+		const handlePointerMove = (event: PointerEvent) => {
+			if (!canvasRef) return;
+			const rect = canvasRef.getBoundingClientRect();
+			setMarquee((prev) => {
+				if (!prev) return prev;
+				return {
+					...prev,
+					endX: clamp(event.clientX - rect.left, 0, SCENE_WIDTH),
+					endY: clamp(event.clientY - rect.top, 0, SCENE_HEIGHT),
+				};
+			});
+		};
+
+		const handlePointerUp = () => {
+			const m = marquee();
+			if (m) {
+				const left = Math.min(m.startX, m.endX);
+				const right = Math.max(m.startX, m.endX);
+				const top = Math.min(m.startY, m.endY);
+				const bottom = Math.max(m.startY, m.endY);
+
+				// Only select if marquee has non-trivial size
+				if (right - left > 2 || bottom - top > 2) {
+					const all = placedAssets();
+					const transforms = localTransforms();
+					const hits = new Set<Id<'sceneAssets'>>();
+					for (const asset of all) {
+						const local = transforms[asset._id];
+						const ax = local?.x ?? asset.x;
+						const ay = local?.y ?? asset.y;
+						const aw = local?.width ?? asset.width;
+						const ah = local?.height ?? asset.height;
+						if (ax < right && ax + aw > left && ay < bottom && ay + ah > top) {
+							hits.add(asset._id);
+						}
+					}
+					if (hits.size > 0) {
+						setSelectedAssetIds(hits);
+					}
+				}
+			}
+			setMarquee(null);
+		};
+
+		window.addEventListener('pointermove', handlePointerMove);
+		window.addEventListener('pointerup', handlePointerUp);
+
+		onCleanup(() => {
+			window.removeEventListener('pointermove', handlePointerMove);
+			window.removeEventListener('pointerup', handlePointerUp);
+		});
+	});
+
+	// Bulk move effect
+	createEffect(() => {
+		const state = bulkMove();
+		if (!state) {
+			return;
+		}
+
+		props.onDragStateChange(true);
+
+		const handlePointerMove = (event: PointerEvent) => {
+			const current = bulkMove();
+			if (!current) return;
+
+			const deltaX = event.clientX - current.startClientX;
+			const deltaY = event.clientY - current.startClientY;
+
+			setLocalTransforms((prev) => {
+				const next = { ...prev };
+				for (const [id, startPos] of Object.entries(current.startPositions)) {
+					const asset = placedAssets().find((a) => a._id === id);
+					if (!asset) continue;
+					const local = prev[id];
+					const width = local?.width ?? asset.width;
+					const height = local?.height ?? asset.height;
+					const rotation = local?.rotation ?? asset.rotation ?? 0;
+					const locked = local?.locked ?? asset.locked ?? false;
+					next[id] = {
+						x: clamp(snapToGrid(startPos.x + deltaX, props.gridSize), 0, Math.max(0, SCENE_WIDTH - width)),
+						y: clamp(snapToGrid(startPos.y + deltaY, props.gridSize), 0, Math.max(0, SCENE_HEIGHT - height)),
+						width,
+						height,
+						rotation,
+						locked,
+					};
+				}
+				return next;
+			});
+		};
+
+		const handlePointerUp = () => {
+			const current = bulkMove();
+			props.onDragStateChange(false);
+
+			if (current) {
+				const transforms = localTransforms();
+				const all = placedAssets();
+				for (const id of Object.keys(current.startPositions)) {
+					const local = transforms[id];
+					if (!local) continue;
+					const asset = all.find((a) => a._id === id);
+					if (!asset) continue;
+					void updateAsset.mutate({
+						assetId: id as Id<'sceneAssets'>,
+						x: local.x,
+						y: local.y,
+						width: local.width,
+						height: local.height,
+						rotation: local.rotation,
+					});
+				}
+			}
+
+			setBulkMove(null);
+		};
+
+		window.addEventListener('pointermove', handlePointerMove);
+		window.addEventListener('pointerup', handlePointerUp);
+
+		onCleanup(() => {
+			window.removeEventListener('pointermove', handlePointerMove);
+			window.removeEventListener('pointerup', handlePointerUp);
+			props.onDragStateChange(false);
+		});
+	});
+
 	const startEdit = (
 		asset: {
 			_id: Id<'sceneAssets'>;
@@ -611,6 +810,29 @@ function CanvasWithScene(props: {
 		props.onDebugEvent?.(`asset ${mode} start`, asset._id);
 	};
 
+	const startBulkMove = (event: PointerEvent) => {
+		const ids = selectedAssetIds();
+		const all = placedAssets();
+		const transforms = localTransforms();
+		const startPositions: Record<string, { x: number; y: number }> = {};
+		for (const id of ids) {
+			const asset = all.find((a) => a._id === id);
+			if (!asset) continue;
+			const local = transforms[id];
+			startPositions[id] = {
+				x: local?.x ?? asset.x,
+				y: local?.y ?? asset.y,
+			};
+		}
+		setBulkMove({
+			startClientX: event.clientX,
+			startClientY: event.clientY,
+			startPositions,
+		});
+	};
+
+	const multiSelectCount = createMemo(() => selectedAssetIds().size);
+
 	return (
 		<CanvasFrame
 			ref={(element) => {
@@ -619,8 +841,59 @@ function CanvasWithScene(props: {
 			gridSize={props.gridSize}
 			showGrid={props.showGrid}
 			isDropTarget={isDropTarget()}
-			onPointerDown={() => setSelectedAssetId(null)}
+			onPointerDown={(event) => {
+				// Only fire on direct background clicks (not sprite clicks)
+				if (event.target !== event.currentTarget) return;
+				setSelectedAssetIds(new Set());
+				if (!canvasRef) return;
+				const rect = canvasRef.getBoundingClientRect();
+				setMarquee({
+					startX: event.clientX - rect.left,
+					startY: event.clientY - rect.top,
+					endX: event.clientX - rect.left,
+					endY: event.clientY - rect.top,
+				});
+			}}
 		>
+			{/* Marquee selection rect */}
+			<Show when={marquee()}>
+				{(m) => {
+					const left = () => Math.min(m().startX, m().endX);
+					const top = () => Math.min(m().startY, m().endY);
+					const width = () => Math.abs(m().endX - m().startX);
+					const height = () => Math.abs(m().endY - m().startY);
+					return (
+						<div
+							class="pointer-events-none absolute border border-primary/70 bg-primary/10"
+							style={{
+								left: `${left()}px`,
+								top: `${top()}px`,
+								width: `${width()}px`,
+								height: `${height()}px`,
+							}}
+						/>
+					);
+				}}
+			</Show>
+
+			{/* Multi-select floating toolbar */}
+			<Show when={multiSelectCount() > 1}>
+				<div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-white/10 bg-black/80 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white/70">
+					<span>{multiSelectCount()} selected</span>
+					<button
+						class="rounded-full px-2 py-1 text-rose-200 transition hover:bg-white/10"
+						type="button"
+						onPointerDown={(event) => event.stopPropagation()}
+						onClick={(event) => {
+							event.stopPropagation();
+							bulkDelete();
+						}}
+					>
+						Delete {multiSelectCount()}
+					</button>
+				</div>
+			</Show>
+
 			{/* Drag ghost preview / pending placement */}
 			<Show when={dragGhost()}>
 				{(ghost) => (
@@ -662,6 +935,13 @@ function CanvasWithScene(props: {
 								locked: localTransform()?.locked ?? asset.locked ?? false,
 							}));
 
+							const selectionMode = createMemo(() => {
+								const ids = selectedAssetIds();
+								if (!ids.has(asset._id)) return 'none' as const;
+								if (ids.size === 1) return 'single' as const;
+								return 'multi' as const;
+							});
+
 							return (
 								<PlacedSprite
 									sprite={{
@@ -673,24 +953,48 @@ function CanvasWithScene(props: {
 									y={view().y}
 									rotation={view().rotation}
 									locked={view().locked}
-									isSelected={selectedAssetId() === asset._id}
-									onSelect={() => setSelectedAssetId(asset._id)}
+									selectionMode={selectionMode()}
+									onSelect={(event) => {
+										if (event.shiftKey) {
+											// Shift+click: toggle in/out of multi-select
+											setSelectedAssetIds((prev) => {
+												const next = new Set(prev);
+												if (next.has(asset._id)) {
+													next.delete(asset._id);
+												} else {
+													next.add(asset._id);
+												}
+												return next;
+											});
+										} else if (selectedAssetIds().size > 1 && selectedAssetIds().has(asset._id)) {
+											// Already in multi-select: keep selection (bulk move will be initiated)
+										} else {
+											// Single select
+											setSelectedAssetIds(new Set([asset._id]));
+										}
+									}}
 									onMoveStart={(event) => {
 										event.stopPropagation();
 										event.preventDefault();
-										setSelectedAssetId(asset._id);
-										startEdit(
-											{
-												...asset,
-												...view(),
-											},
-											'move',
-											event,
-										);
+										const ids = selectedAssetIds();
+										if (ids.size > 1 && ids.has(asset._id)) {
+											// Bulk move
+											startBulkMove(event);
+										} else {
+											setSelectedAssetIds(new Set([asset._id]));
+											startEdit(
+												{
+													...asset,
+													...view(),
+												},
+												'move',
+												event,
+											);
+										}
 									}}
 									onResizeStart={(handle, event) => {
 										event.preventDefault();
-										setSelectedAssetId(asset._id);
+										setSelectedAssetIds(new Set([asset._id]));
 										startEdit(
 											{
 												...asset,
@@ -703,7 +1007,7 @@ function CanvasWithScene(props: {
 									}}
 									onRotateStart={(event) => {
 										event.preventDefault();
-										setSelectedAssetId(asset._id);
+										setSelectedAssetIds(new Set([asset._id]));
 										startEdit(
 											{
 												...asset,

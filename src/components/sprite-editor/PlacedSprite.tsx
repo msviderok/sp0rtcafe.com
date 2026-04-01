@@ -12,8 +12,8 @@ export default function PlacedSprite(props: {
 	y: number;
 	rotation: number;
 	locked: boolean;
-	isSelected: boolean;
-	onSelect: () => void;
+	selectionMode: 'none' | 'single' | 'multi';
+	onSelect: (event: PointerEvent) => void;
 	onMoveStart: (event: PointerEvent) => void;
 	onResizeStart: (handle: ResizeHandle, event: PointerEvent) => void;
 	onRotateStart: (event: PointerEvent) => void;
@@ -46,14 +46,14 @@ export default function PlacedSprite(props: {
 				}}
 				onPointerDown={(event) => {
 					event.stopPropagation();
-					props.onSelect();
+					props.onSelect(event);
 					if (!props.locked) {
 						props.onMoveStart(event);
 					}
 				}}
 			/>
 
-			{props.isSelected ? (
+			{props.selectionMode === 'single' ? (
 				<>
 					<div
 						class="pointer-events-none absolute inset-0 border-2 border-solid"
@@ -113,6 +113,14 @@ export default function PlacedSprite(props: {
 						/>
 					))}
 				</>
+			) : props.selectionMode === 'multi' ? (
+				<div
+					class="pointer-events-none absolute inset-0 border-2 border-solid"
+					style={{
+						borderColor: 'rgb(255 217 122 / 0.7)',
+						'box-shadow': '0 0 0 1px rgb(0 0 0 / 0.3), 0 0 10px rgb(255 201 102 / 0.18)',
+					}}
+				/>
 			) : null}
 		</div>
 	);
