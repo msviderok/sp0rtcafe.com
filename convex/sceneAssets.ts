@@ -81,6 +81,9 @@ export const update = mutation({
     height: v.optional(v.number()),
     rotation: v.optional(v.number()),
     locked: v.optional(v.boolean()),
+    bgRepeat: v.optional(v.string()),
+    bgPosition: v.optional(v.string()),
+    bgSize: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const asset = await ctx.db.get(args.assetId);
@@ -96,6 +99,9 @@ export const update = mutation({
       height?: number;
       rotation?: number;
       locked?: boolean;
+      bgRepeat?: string;
+      bgPosition?: string;
+      bgSize?: string;
     } = {};
 
     if (args.x !== undefined) {
@@ -115,6 +121,15 @@ export const update = mutation({
     }
     if (args.locked !== undefined) {
       patch.locked = args.locked;
+    }
+    if (args.bgRepeat !== undefined) {
+      patch.bgRepeat = args.bgRepeat;
+    }
+    if (args.bgPosition !== undefined) {
+      patch.bgPosition = args.bgPosition;
+    }
+    if (args.bgSize !== undefined) {
+      patch.bgSize = args.bgSize;
     }
 
     await ctx.db.patch(args.assetId, patch);
@@ -146,6 +161,9 @@ export const restore = mutation({
     height: v.number(),
     rotation: v.number(),
     locked: v.boolean(),
+    bgRepeat: v.optional(v.string()),
+    bgPosition: v.optional(v.string()),
+    bgSize: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sceneAssets", args);

@@ -1,4 +1,4 @@
-import { getSpriteBackgroundStyle } from "~/lib/sceneStyles";
+import { getSpriteBackgroundStyle } from '~/lib/sceneStyles';
 
 export type SceneSprite = {
 	url: string;
@@ -18,12 +18,14 @@ export default function PlacedSprite(props: {
 	rotation: number;
 	locked: boolean;
 	selectionMode: 'none' | 'single' | 'multi';
+	isStyleEditorOpen: boolean;
 	onSelect: (event: PointerEvent) => void;
 	onMoveStart: (event: PointerEvent) => void;
 	onResizeStart: (handle: ResizeHandle, event: PointerEvent) => void;
 	onRotateStart: (event: PointerEvent) => void;
 	onDelete: () => void;
 	onToggleLock: () => void;
+	onToggleStyleEditor: () => void;
 }) {
 	const handlePositions: Record<ResizeHandle, string> = {
 		nw: 'left-0 top-0 -translate-x-[1px] -translate-y-[1px] border-l-2 border-t-2',
@@ -67,6 +69,17 @@ export default function PlacedSprite(props: {
 					/>
 
 					<div class="absolute -top-10 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-white/70">
+						<button
+							class="rounded-full px-2 py-1 transition hover:bg-white/10"
+							type="button"
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={(event) => {
+								event.stopPropagation();
+								props.onToggleStyleEditor();
+							}}
+						>
+							{props.isStyleEditorOpen ? 'Close style' : 'Style'}
+						</button>
 						<button
 							class="rounded-full px-2 py-1 transition hover:bg-white/10"
 							type="button"

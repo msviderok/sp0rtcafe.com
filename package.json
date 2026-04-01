@@ -15,7 +15,7 @@
   "dependencies": {
     "@dnd-kit/solid": "^0.3.2",
     "@fontsource-variable/montserrat": "^5.2.8",
-    "@msviderok/base-ui-solid": "1.2.0-alpha.3",
+    "@msviderok/base-ui-solid": "1.0.0-beta.9",
     "@solidjs/router": "^0.16.1",
     "@solidjs/start": "2.0.0-alpha.2",
     "@solidjs/vite-plugin-nitro-2": "^0.1.0",

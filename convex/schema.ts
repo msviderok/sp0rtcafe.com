@@ -54,5 +54,8 @@ export default defineSchema({
     height: v.number(),
     rotation: v.optional(v.number()),
     locked: v.optional(v.boolean()),
+    bgRepeat: v.optional(v.string()),
+    bgPosition: v.optional(v.string()),
+    bgSize: v.optional(v.string()),
   }).index("by_sceneId", ["sceneId"]),
 });
