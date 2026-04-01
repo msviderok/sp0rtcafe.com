@@ -142,7 +142,7 @@ function createOptimisticCharacter(
   current: SceneCharacter[] | undefined,
   sceneId: Id<"scenes">,
   sessionId: string,
-  playerKey: string,
+  color: string,
   clientSequence: number,
   state: CharacterState,
 ): SceneCharacter {
@@ -161,7 +161,7 @@ function createOptimisticCharacter(
     width: existing?.width ?? CHARACTER_WIDTH,
     height: existing?.height ?? CHARACTER_HEIGHT,
     grounded: state.grounded,
-    color: existing?.color ?? getCharacterColor(playerKey),
+    color: existing?.color ?? color,
     lastProcessedSequence: clientSequence,
     updatedAt: now,
     isCurrentUser: true,
@@ -285,7 +285,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   }
 
   const sessionId = ensureSceneSessionId();
-  const playerKey = createMemo(() => userId() ?? sessionId);
   const assets = useQuery(api.sceneAssets.listByScene, () => ({ sceneId: props.sceneId }), {
     keepPreviousData: true,
   });
@@ -294,6 +293,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
   const [frameNow, setFrameNow] = createSignal(Date.now());
+  const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
   const ownCharacter = createMemo(
@@ -316,13 +316,29 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
       ),
     })),
   );
-  const playerColor = createMemo(() => ownCharacter()?.color ?? getCharacterColor(playerKey()));
+  const playerColor = createMemo(() => ownCharacter()?.color ?? fallbackPlayerColor());
 
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
   let lastSentAt = 0;
   let latestSequence = 0;
+
+  createEffect(() => {
+    const nextUserId = userId();
+
+    if (nextUserId) {
+      setFallbackPlayerColor(getCharacterColor(nextUserId));
+    }
+  });
+
+  createEffect(() => {
+    const nextOwnCharacter = ownCharacter();
+
+    if (nextOwnCharacter?.color) {
+      setFallbackPlayerColor(nextOwnCharacter.color);
+    }
+  });
 
   createEffect(() => {
     props.sceneId;
@@ -447,7 +463,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               current,
               props.sceneId,
               sessionId,
-              playerKey(),
+              playerColor(),
               nextSequence,
               nextState,
             );

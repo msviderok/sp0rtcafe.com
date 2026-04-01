@@ -47,6 +47,13 @@ function toPublicCharacter(
   };
 }
 
+function getIdentityColorSeed(identity: {
+  subject?: string | null;
+  tokenIdentifier: string;
+}) {
+  return identity.subject ?? identity.tokenIdentifier;
+}
+
 export const listByScene = query({
   args: {
     sceneId: v.id("scenes"),
@@ -84,6 +91,8 @@ export const sync = mutation({
     if (!identity) {
       throw new Error("Not authenticated");
     }
+
+    const colorSeed = getIdentityColorSeed(identity);
 
     const existing = await ctx.db
       .query("characters")
@@ -154,7 +163,7 @@ export const sync = mutation({
       width: CHARACTER_WIDTH,
       height: CHARACTER_HEIGHT,
       grounded: nextState.grounded,
-      color: existing?.color ?? getCharacterColor(identity.tokenIdentifier),
+      color: existing?.color ?? getCharacterColor(colorSeed),
       lastProcessedSequence: args.clientSequence,
       updatedAt: now,
     };
