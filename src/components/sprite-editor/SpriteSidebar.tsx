@@ -91,7 +91,7 @@ export default function SpriteSidebar(props: {
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
 	const [isOpen, setIsOpen] = createSignal(true);
-	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(true);
+	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
 	let fileInputRef: HTMLInputElement | undefined;
 
@@ -301,13 +301,13 @@ export default function SpriteSidebar(props: {
 
 	return (
 		<aside
-			class={`flex min-h-[20rem] min-w-0 shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-card/80 shadow-[0_24px_80px_rgba(0,0,0,0.18)] transition-[width] duration-300 ease-in-out xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] ${isOpen() ? 'w-full xl:w-72' : 'w-10'}`}
+			class={`flex min-h-80 min-w-0 shrink-0 flex-col overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] ${isOpen() ? 'w-full xl:w-72' : 'w-10'}`}
 			onKeyDown={(e) => e.key === 'Escape' && setIsOpen(false)}
 		>
 			{/* Collapsed strip */}
 			<Show when={!isOpen()}>
 				<button
-					class="flex h-full min-h-[20rem] w-full cursor-pointer items-center justify-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition hover:bg-accent hover:text-foreground [writing-mode:vertical-rl]"
+					class="flex h-full min-h-80 w-full cursor-pointer items-center justify-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition hover:bg-accent hover:text-foreground [writing-mode:vertical-rl]"
 					type="button"
 					onClick={() => setIsOpen(true)}
 					aria-label="Open assets panel"
@@ -342,14 +342,22 @@ export default function SpriteSidebar(props: {
 				</div>
 
 				<div class="flex-1 overflow-y-auto p-2">
-					<section class="overflow-hidden rounded-2xl border border-border bg-background/60">
+					<section class="border-b border-border">
 						<button
 							class="flex w-full items-center justify-between px-4 py-3 text-left"
 							type="button"
 							onClick={() => setIsScenesSectionOpen((current) => !current)}
 						>
 							<span class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Scenes</span>
-							<span class="text-xs text-muted-foreground">{isScenesSectionOpen() ? 'Hide' : 'Show'}</span>
+							<svg
+								class={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isScenesSectionOpen() ? 'rotate-180' : ''}`}
+								viewBox="0 0 16 16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M4 6l4 4 4-4" />
+							</svg>
 						</button>
 						<Show when={isScenesSectionOpen()}>
 							<div class="border-t border-border px-3 py-3">
@@ -429,14 +437,22 @@ export default function SpriteSidebar(props: {
 						</Show>
 					</section>
 
-					<section class="mt-3 overflow-hidden rounded-2xl border border-border bg-background/60">
+					<section class="overflow-hidden">
 						<button
 							class="flex w-full items-center justify-between px-4 py-3 text-left"
 							type="button"
 							onClick={() => setIsAssetsSectionOpen((current) => !current)}
 						>
 							<span class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Assets</span>
-							<span class="text-xs text-muted-foreground">{isAssetsSectionOpen() ? 'Hide' : 'Show'}</span>
+							<svg
+								class={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isAssetsSectionOpen() ? 'rotate-180' : ''}`}
+								viewBox="0 0 16 16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M4 6l4 4 4-4" />
+							</svg>
 						</button>
 						<Show when={isAssetsSectionOpen()}>
 							<div class="border-t border-border p-2">

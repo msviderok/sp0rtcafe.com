@@ -166,3 +166,22 @@ body {
     @apply font-sans;
   }
 }
+
+/* Collapsible panel animation */
+.collapsible-animated {
+  overflow: hidden;
+  transition: height 200ms ease-out;
+}
+
+.collapsible-animated[data-starting-style],
+.collapsible-animated[data-ending-style] {
+  height: 0;
+}
+
+.collapsible-animated[data-open] {
+  height: var(--collapsible-panel-height);
+}
+
+.collapsible-animated[data-closed] {
+  height: 0;
+}

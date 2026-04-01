@@ -118,7 +118,7 @@ export default function SceneCanvas(props: {
 				</div>
 			</div>
 
-			<div class="overflow-auto rounded-sm border border-border bg-muted/25 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
+			<div class="overflow-auto p-4">
 				<Show when={props.sceneId} fallback={<CanvasFrame gridSize={props.gridSize} showGrid={showGrid()} />}>
 					{(sceneId) => (
 						<CanvasWithScene
