@@ -389,6 +389,18 @@ export const advanceTrack = mutation({
   },
 });
 
+export const setMasterVolume = mutation({
+  args: {
+    volume: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
+    const clamped = Math.max(0, Math.min(1, args.volume));
+    const state = await ensureState(ctx);
+    await ctx.db.patch(state._id, { masterVolume: clamped, updatedAt: Date.now() });
+  },
+});
+
 export const previousTrack = mutation({
   args: {},
   handler: async (ctx) => {

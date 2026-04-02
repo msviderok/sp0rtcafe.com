@@ -34,6 +34,7 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     pausePosition: v.optional(v.number()),
     isPaused: v.boolean(),
+    masterVolume: v.optional(v.number()),
     updatedAt: v.number(),
   }),
 

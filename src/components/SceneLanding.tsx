@@ -756,6 +756,11 @@ function LandingSceneCanvas(props: {
   const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
   const [volume, setVolume] = createSignal(readStoredRadioVolume());
   const [muted, setMuted] = createSignal(false);
+  const masterVolume = createMemo(() => {
+    const mv = radioState.data()?.masterVolume;
+    return mv !== undefined ? clampRadioVolume(mv) : 1;
+  });
+  const effectiveVolume = createMemo(() => clampRadioVolume(volume() * masterVolume()));
   const initialConnectionState = convex.connectionState();
   const [socketConnected, setSocketConnected] = createSignal(
     initialConnectionState.isWebSocketConnected
@@ -1888,7 +1893,7 @@ function LandingSceneCanvas(props: {
         radioState={radioState.data() ?? null}
         isConnected={socketConnected()}
         onTrackEnded={handleTrackEnded}
-        volume={volume()}
+        volume={effectiveVolume()}
         muted={muted()}
       />
 
