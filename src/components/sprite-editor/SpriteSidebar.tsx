@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex-solidjs';
-import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { future_genUploader } from 'uploadthing/client-future';
 import type { UploadRouter } from '~/server/uploadthing';
 import { api } from '../../../convex/_generated/api';
@@ -34,6 +34,28 @@ function getFileDimensions(file: File): Promise<{ width: number; height: number 
 	});
 }
 
+function getAudioDurationMs(file: File): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const objectUrl = URL.createObjectURL(file);
+		const audio = new Audio();
+		audio.preload = 'metadata';
+		audio.onloadedmetadata = () => {
+			URL.revokeObjectURL(objectUrl);
+			if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+				reject(new Error('Failed to read audio duration'));
+				return;
+			}
+
+			resolve(Math.round(audio.duration * 1000));
+		};
+		audio.onerror = () => {
+			URL.revokeObjectURL(objectUrl);
+			reject(new Error('Failed to read audio duration'));
+		};
+		audio.src = objectUrl;
+	});
+}
+
 function compactUploadRecord(record: {
 	uploadThingKey: string;
 	fileName: string;
@@ -43,6 +65,7 @@ function compactUploadRecord(record: {
 	size?: number;
 	mimeType?: string;
 	uploadedAt?: number;
+	durationMs?: number;
 	width?: number;
 	height?: number;
 	error?: string;
@@ -56,6 +79,7 @@ function compactUploadRecord(record: {
 		...(record.size !== undefined ? { size: record.size } : {}),
 		...(record.mimeType !== undefined ? { mimeType: record.mimeType } : {}),
 		...(record.uploadedAt !== undefined ? { uploadedAt: record.uploadedAt } : {}),
+		...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
 		...(record.width !== undefined ? { width: record.width } : {}),
 		...(record.height !== undefined ? { height: record.height } : {}),
 		...(record.error !== undefined ? { error: record.error } : {}),
@@ -92,15 +116,15 @@ export default function SpriteSidebar(props: {
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
 	const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
 	const activeUploads = useQuery(api.files.listActiveUploads, {});
-	const audioFiles = useQuery(api.files.listAudio, {});
 	const radioState = useQuery(api.radio.getStateWithFiles, {});
-	const setRadioTrack = useMutation(api.radio.setTrack);
+	const ensureAutoplayState = useMutation(api.radio.ensureAutoplayState);
 	const pauseRadio = useMutation(api.radio.pause);
 	const resumeRadio = useMutation(api.radio.resume);
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [audioErrorMessage, setAudioErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
 	const [isUploadingAudio, setIsUploadingAudio] = createSignal(false);
+	const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
 	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
 	const [isAudioSectionOpen, setIsAudioSectionOpen] = createSignal(false);
@@ -117,6 +141,24 @@ export default function SpriteSidebar(props: {
 		void syncUploadedSprites.mutate({ limit: 200 });
 	});
 
+	createEffect(() => {
+		if (radioState.isLoading()) {
+			return;
+		}
+
+		if (radioState.data()?.currentTrackUrl && radioState.data()?.nextTrackUrl) {
+			setHasAttemptedAutoplaySeed(false);
+			return;
+		}
+
+		if (hasAttemptedAutoplaySeed()) {
+			return;
+		}
+
+		setHasAttemptedAutoplaySeed(true);
+		void ensureAutoplayState.mutate({});
+	});
+
 	const syncUploadBatch = async (
 		files: Array<{
 			uploadThingKey: string;
@@ -127,6 +169,7 @@ export default function SpriteSidebar(props: {
 			size?: number;
 			mimeType?: string;
 			uploadedAt?: number;
+			durationMs?: number;
 			width?: number;
 			height?: number;
 			error?: string;
@@ -332,6 +375,15 @@ export default function SpriteSidebar(props: {
 		setIsUploadingAudio(true);
 
 		try {
+			const audioMetadata = new Map<string, { durationMs: number }>();
+			await Promise.all(
+				audioFilesSelected.map(async (file) => {
+					audioMetadata.set(getFileFingerprint(file), {
+						durationMs: await getAudioDurationMs(file),
+					});
+				}),
+			);
+
 			await uploadThing.uploadFiles('audioUploader', {
 				files: audioFilesSelected,
 				onEvent: (uploadEvent) => {
@@ -339,16 +391,22 @@ export default function SpriteSidebar(props: {
 						void syncUploadBatch(
 							uploadEvent.files
 								.filter((file) => file.key)
-								.map((file) => ({
-									uploadThingKey: file.key!,
-									fileName: file.name,
-									status: 'pending' as const,
-									progress: 0,
-									size: file.size,
-									mimeType: file.type || undefined,
-								})),
+								.map((file) => {
+									const metadata = audioMetadata.get(getFileFingerprint(file));
+
+									return {
+										uploadThingKey: file.key!,
+										fileName: file.name,
+										status: 'pending' as const,
+										progress: 0,
+										size: file.size,
+										mimeType: file.type || undefined,
+										durationMs: metadata?.durationMs,
+									};
+								}),
 						);
 					} else if (uploadEvent.type === 'upload-completed') {
+						const metadata = audioMetadata.get(getFileFingerprint(uploadEvent.file));
 						void syncUploadBatch([
 							{
 								uploadThingKey: uploadEvent.file.key,
@@ -359,9 +417,11 @@ export default function SpriteSidebar(props: {
 								size: uploadEvent.file.size,
 								mimeType: uploadEvent.file.type || undefined,
 								uploadedAt: Date.now(),
+								durationMs: metadata?.durationMs,
 							},
 						]);
 					} else if (uploadEvent.type === 'upload-failed') {
+						const metadata = audioMetadata.get(getFileFingerprint(uploadEvent.file));
 						void syncUploadBatch([
 							{
 								uploadThingKey: uploadEvent.file.key,
@@ -370,6 +430,7 @@ export default function SpriteSidebar(props: {
 								progress: 0,
 								size: uploadEvent.file.size,
 								mimeType: uploadEvent.file.type || undefined,
+								durationMs: metadata?.durationMs,
 								error: uploadEvent.file.reason.message,
 							},
 						]);
@@ -381,6 +442,7 @@ export default function SpriteSidebar(props: {
 			setAudioErrorMessage('upload fail');
 		} finally {
 			setIsUploadingAudio(false);
+			setHasAttemptedAutoplaySeed(false);
 			input.value = '';
 		}
 	};
@@ -460,6 +522,7 @@ export default function SpriteSidebar(props: {
 								fill="none"
 								stroke="currentColor"
 								stroke-width="2"
+								aria-hidden="true"
 							>
 								<path d="M4 6l4 4 4-4" />
 							</svg>
@@ -555,6 +618,7 @@ export default function SpriteSidebar(props: {
 								fill="none"
 								stroke="currentColor"
 								stroke-width="2"
+								aria-hidden="true"
 							>
 								<path d="M4 6l4 4 4-4" />
 							</svg>
@@ -651,6 +715,7 @@ export default function SpriteSidebar(props: {
 								fill="none"
 								stroke="currentColor"
 								stroke-width="2"
+								aria-hidden="true"
 							>
 								<path d="M4 6l4 4 4-4" />
 							</svg>
@@ -702,6 +767,12 @@ export default function SpriteSidebar(props: {
 										</div>
 									</Show>
 
+									<Show when={radioState.data()?.nextTrackName}>
+										<div class="truncate text-xs text-muted-foreground">
+											Next: {radioState.data()?.nextTrackName}
+										</div>
+									</Show>
+
 									<button
 										class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
 										type="button"
@@ -715,62 +786,7 @@ export default function SpriteSidebar(props: {
 									>
 										{radioState.data()?.isPaused ? 'Resume' : 'Pause'}
 									</button>
-
-									<label class="text-[10px] text-muted-foreground">
-										Current track
-										<select
-											class="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
-											value={radioState.data()?.currentTrackFileId ?? ''}
-											onChange={(e) => {
-												const val = e.currentTarget.value;
-												void setRadioTrack.mutate({
-													slot: 'current',
-													fileId: val ? (val as Id<'files'>) : undefined,
-												});
-											}}
-										>
-											<option value="">None</option>
-											<For each={audioFiles.data() ?? []}>
-												{(file) => <option value={file._id}>{file.fileName}</option>}
-											</For>
-										</select>
-									</label>
-
-									<label class="text-[10px] text-muted-foreground">
-										Next track
-										<select
-											class="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
-											value={radioState.data()?.nextTrackFileId ?? ''}
-											onChange={(e) => {
-												const val = e.currentTarget.value;
-												void setRadioTrack.mutate({
-													slot: 'next',
-													fileId: val ? (val as Id<'files'>) : undefined,
-												});
-											}}
-										>
-											<option value="">None</option>
-											<For each={audioFiles.data() ?? []}>
-												{(file) => <option value={file._id}>{file.fileName}</option>}
-											</For>
-										</select>
-									</label>
 								</div>
-
-								<Show when={(audioFiles.data() ?? []).length > 0}>
-									<div class="mt-3 flex flex-col gap-0.5">
-										<div class="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Audio files</div>
-										<For each={audioFiles.data() ?? []}>
-											{(file) => (
-												<div class="flex items-center gap-2 rounded-lg bg-muted/50 p-1.5">
-													<div class="min-w-0 flex-1">
-														<div class="truncate text-[11px] leading-tight text-foreground/50">{file.fileName}</div>
-													</div>
-												</div>
-											)}
-										</For>
-									</div>
-								</Show>
 							</div>
 						</Show>
 					</section>

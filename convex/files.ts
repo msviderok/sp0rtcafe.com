@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
@@ -20,6 +21,7 @@ const fileSyncValidator = v.object({
   size: v.optional(v.number()),
   mimeType: v.optional(v.string()),
   uploadedAt: v.optional(v.number()),
+  durationMs: v.optional(v.number()),
   width: v.optional(v.number()),
   height: v.optional(v.number()),
   error: v.optional(v.string()),
@@ -35,6 +37,7 @@ type FileSync = {
   size?: number;
   mimeType?: string;
   uploadedAt?: number;
+  durationMs?: number;
   width?: number;
   height?: number;
   error?: string;
@@ -138,6 +141,7 @@ async function upsertFile(ctx: MutationCtx, incoming: FileSync, createSprites: b
     size?: number;
     mimeType?: string;
     uploadedAt?: number;
+    durationMs?: number;
     width?: number;
     height?: number;
     error?: string;
@@ -159,6 +163,9 @@ async function upsertFile(ctx: MutationCtx, incoming: FileSync, createSprites: b
   if (incoming.uploadedAt !== undefined) {
     upsertPatch.uploadedAt = incoming.uploadedAt;
   }
+  if (incoming.durationMs !== undefined) {
+    upsertPatch.durationMs = incoming.durationMs;
+  }
   if (incoming.width !== undefined) {
     upsertPatch.width = incoming.width;
   }
@@ -178,6 +185,7 @@ async function upsertFile(ctx: MutationCtx, incoming: FileSync, createSprites: b
     size?: number;
     mimeType?: string;
     uploadedAt?: number;
+    durationMs?: number;
     width?: number;
     height?: number;
     error?: string;
@@ -199,6 +207,9 @@ async function upsertFile(ctx: MutationCtx, incoming: FileSync, createSprites: b
   }
   if (incoming.uploadedAt !== undefined) {
     insertData.uploadedAt = incoming.uploadedAt;
+  }
+  if (incoming.durationMs !== undefined) {
+    insertData.durationMs = incoming.durationMs;
   }
   if (incoming.width !== undefined) {
     insertData.width = incoming.width;
@@ -285,6 +296,52 @@ export const listAudio = query({
         f.mimeType?.startsWith("audio/") ||
         /\.(mp3|ogg|wav|aac)$/i.test(f.fileName),
     );
+  },
+});
+
+export const setAudioDuration = mutation({
+  args: {
+    fileId: v.id("files"),
+    durationMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const file = await ctx.db.get(args.fileId);
+    if (!file) {
+      return;
+    }
+
+    if (
+      file.status !== "uploaded" ||
+      !(file.mimeType?.startsWith("audio/") || /\.(mp3|ogg|wav|aac)$/i.test(file.fileName))
+    ) {
+      return;
+    }
+
+    if (!Number.isFinite(args.durationMs) || args.durationMs <= 0) {
+      return;
+    }
+
+    if (file.durationMs === args.durationMs) {
+      return;
+    }
+
+    await ctx.db.patch(file._id, {
+      durationMs: args.durationMs,
+    });
+
+    const radioState = await ctx.db.query("radioState").first();
+    if (
+      radioState?.currentTrackFileId === file._id &&
+      !radioState.isPaused &&
+      radioState.startedAt !== undefined
+    ) {
+      const remainingMs = Math.max(0, args.durationMs - Math.max(0, Date.now() - radioState.startedAt));
+
+      await ctx.scheduler.runAfter(remainingMs, api.radio.advanceTrack, {
+        expectedCurrentFileId: file._id,
+        expectedStartedAt: radioState.startedAt,
+      });
+    }
   },
 });
 

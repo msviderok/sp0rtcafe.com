@@ -321,6 +321,18 @@ function lerp(start: number, end: number, amount: number) {
   return start + (end - start) * amount;
 }
 
+function formatLandingTrackName(trackName?: string) {
+  if (!trackName) {
+    return undefined;
+  }
+
+  return trackName
+    .replace(/\.[^.]+$/, "")
+    .replace(/^\d+\s*[-._)]*\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function updateCamera(
   playerX: number,
   playerY: number,
@@ -511,19 +523,17 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
   const radioState = useQuery(api.radio.getStateWithFiles, {});
   const currentAccess = useQuery(api.admin.getCurrentAccess, {});
-  const audioFiles = useQuery(
-    api.files.listAudio,
-    () => (currentAccess.data()?.isAdmin ? {} : "skip"),
-  );
-  const setRadioTrack = useMutation(api.radio.setTrack);
+  const ensureAutoplayState = useMutation(api.radio.ensureAutoplayState);
   const pauseRadio = useMutation(api.radio.pause);
   const resumeRadio = useMutation(api.radio.resume);
+  const advanceRadioTrack = useMutation(api.radio.advanceTrack);
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
   const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
   const [cameraX, setCameraX] = createSignal(0);
   const [cameraY, setCameraY] = createSignal(0);
   const [viewportWidth, setViewportWidth] = createSignal(props.width);
   const [viewportHeight, setViewportHeight] = createSignal(props.height);
+  const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
   const initialConnectionState = convex.connectionState();
   const [socketConnected, setSocketConnected] = createSignal(
     initialConnectionState.isWebSocketConnected
@@ -558,6 +568,40 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
+
+  createEffect(() => {
+    if (radioState.isLoading()) {
+      return;
+    }
+
+    const currentTrackUrl = radioState.data()?.currentTrackUrl;
+    const nextTrackUrl = radioState.data()?.nextTrackUrl;
+    if (currentTrackUrl && nextTrackUrl) {
+      setHasAttemptedAutoplaySeed(false);
+      return;
+    }
+
+    if (hasAttemptedAutoplaySeed()) {
+      return;
+    }
+
+    setHasAttemptedAutoplaySeed(true);
+    void ensureAutoplayState.mutate({});
+  });
+
+  const handleTrackEnded = () => {
+    const currentTrackFileId = radioState.data()?.currentTrackFileId;
+    const startedAt = radioState.data()?.startedAt;
+
+    void advanceRadioTrack.mutate(
+      currentTrackFileId
+        ? {
+            expectedCurrentFileId: currentTrackFileId,
+            ...(startedAt !== undefined ? { expectedStartedAt: startedAt } : {}),
+          }
+        : {}
+    );
+  };
   let latestSequence = 0;
   let lastSampleAt = 0;
   let lastPresenceSentAt = 0;
@@ -1189,12 +1233,12 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
                   />
                   <Show when={asset.isCurrentlyPlaying}>
                     <CurrentlyPlayingOverlay
-                      trackName={radioState.data()?.currentTrackName}
+                      trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
                     />
                   </Show>
                   <Show when={asset.isNextTrack}>
                     <NextTrackOverlay
-                      trackName={radioState.data()?.nextTrackName}
+                      trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
                     />
                   </Show>
                 </div>
@@ -1232,7 +1276,11 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
         </div>
       </div>
 
-      <RadioPlayer radioState={radioState.data() ?? null} />
+      <RadioPlayer
+        radioState={radioState.data() ?? null}
+        isConnected={socketConnected()}
+        onTrackEnded={handleTrackEnded}
+      />
 
       <Show when={currentAccess.data()?.isAdmin}>
         <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[4px] border border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm">
@@ -1240,7 +1288,13 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
           <Show when={radioState.data()?.currentTrackName}>
             <div class="truncate text-xs text-white/70">
-              {radioState.data()?.currentTrackName}
+              Now: {radioState.data()?.currentTrackName}
+            </div>
+          </Show>
+
+          <Show when={radioState.data()?.nextTrackName}>
+            <div class="truncate text-xs text-white/50">
+              Next: {radioState.data()?.nextTrackName}
             </div>
           </Show>
 
@@ -1259,52 +1313,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               {radioState.data()?.isPaused ? "Resume" : "Pause"}
             </button>
           </div>
-
-          <div class="mx-1 h-4 w-px bg-white/10" />
-
-          <label class="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-white/40">
-            Current
-            <select
-              class="h-7 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-white outline-none"
-              value={radioState.data()?.currentTrackFileId ?? ""}
-              onChange={(e) => {
-                const val = e.currentTarget.value;
-                void setRadioTrack.mutate({
-                  slot: "current",
-                  fileId: val ? (val as Id<"files">) : undefined,
-                });
-              }}
-            >
-              <option value="">None</option>
-              <For each={audioFiles.data() ?? []}>
-                {(file) => (
-                  <option value={file._id}>{file.fileName}</option>
-                )}
-              </For>
-            </select>
-          </label>
-
-          <label class="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-white/40">
-            Next
-            <select
-              class="h-7 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-white outline-none"
-              value={radioState.data()?.nextTrackFileId ?? ""}
-              onChange={(e) => {
-                const val = e.currentTarget.value;
-                void setRadioTrack.mutate({
-                  slot: "next",
-                  fileId: val ? (val as Id<"files">) : undefined,
-                });
-              }}
-            >
-              <option value="">None</option>
-              <For each={audioFiles.data() ?? []}>
-                {(file) => (
-                  <option value={file._id}>{file.fileName}</option>
-                )}
-              </For>
-            </select>
-          </label>
         </div>
       </Show>
     </div>
@@ -1313,21 +1321,32 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
 function RadioPlayer(props: {
   radioState: {
+    currentTrackFileId?: Id<"files">;
     currentTrackUrl?: string;
     startedAt?: number;
     isPaused: boolean;
     pausePosition?: number;
   } | null;
+  isConnected?: boolean;
+  onTrackEnded?: () => void;
 }) {
   let audioRef: HTMLAudioElement | undefined;
   const [autoplayBlocked, setAutoplayBlocked] = createSignal(false);
+  const reportAudioDuration = useMutation(api.files.setAudioDuration);
+  let lastAdvanceRequestKey: string | null = null;
+  let lastAdvanceRequestAt = 0;
 
   const tryPlay = () => {
     if (!audioRef) return;
     const promise = audioRef.play();
     if (promise) {
-      promise.catch(() => setAutoplayBlocked(true));
+      promise
+        .then(() => setAutoplayBlocked(false))
+        .catch(() => setAutoplayBlocked(true));
+      return;
     }
+
+    setAutoplayBlocked(false);
   };
 
   const seekToSync = () => {
@@ -1337,27 +1356,78 @@ function RadioPlayer(props: {
       audioRef.currentTime = (rs.pausePosition ?? 0) / 1000;
       audioRef.pause();
     } else if (rs.startedAt) {
-      audioRef.currentTime = (Date.now() - rs.startedAt) / 1000;
+      audioRef.currentTime = Math.max(0, (Date.now() - rs.startedAt) / 1000);
       tryPlay();
     }
   };
 
   createEffect(() => {
     const rs = props.radioState;
-    if (!audioRef || !rs) return;
+    if (!audioRef) return;
 
-    if (!rs.currentTrackUrl) {
+    if (!rs?.currentTrackUrl) {
       audioRef.pause();
       audioRef.removeAttribute("src");
+      audioRef.load();
+      setAutoplayBlocked(false);
       return;
     }
 
-    if (audioRef.src !== rs.currentTrackUrl) {
+    if (audioRef.src !== rs.currentTrackUrl || audioRef.ended) {
+      audioRef.pause();
       audioRef.src = rs.currentTrackUrl;
-      audioRef.addEventListener("canplay", () => seekToSync(), { once: true });
+      audioRef.load();
+
+      const syncOnReady = () => seekToSync();
+      audioRef.addEventListener("loadedmetadata", syncOnReady, { once: true });
+      audioRef.addEventListener("canplay", syncOnReady, { once: true });
+
+      queueMicrotask(() => {
+        if (audioRef && audioRef.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          seekToSync();
+        }
+      });
     } else {
       seekToSync();
     }
+  });
+
+  createEffect(() => {
+    const rs = props.radioState;
+    const isConnected = props.isConnected;
+
+    if (!audioRef || !isConnected || !rs?.currentTrackUrl || rs.isPaused) {
+      return;
+    }
+
+    seekToSync();
+  });
+
+  createEffect(() => {
+    const rs = props.radioState;
+    const isConnected = props.isConnected;
+
+    if (!audioRef || !isConnected || !rs?.currentTrackUrl || rs.isPaused) {
+      return;
+    }
+
+    const resumeFromInteraction = () => {
+      if (!audioRef || (!audioRef.paused && !autoplayBlocked())) {
+        return;
+      }
+
+      seekToSync();
+    };
+
+    window.addEventListener("pointerdown", resumeFromInteraction, { passive: true });
+    window.addEventListener("touchstart", resumeFromInteraction, { passive: true });
+    window.addEventListener("keydown", resumeFromInteraction);
+
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", resumeFromInteraction);
+      window.removeEventListener("touchstart", resumeFromInteraction);
+      window.removeEventListener("keydown", resumeFromInteraction);
+    });
   });
 
   // Drift correction every 5s
@@ -1367,7 +1437,7 @@ function RadioPlayer(props: {
 
     const interval = setInterval(() => {
       if (!audioRef || audioRef.paused) return;
-      const expected = (Date.now() - rs.startedAt!) / 1000;
+      const expected = Math.max(0, (Date.now() - rs.startedAt!) / 1000);
       if (Math.abs(audioRef.currentTime - expected) > 2) {
         audioRef.currentTime = expected;
       }
@@ -1376,22 +1446,68 @@ function RadioPlayer(props: {
     onCleanup(() => clearInterval(interval));
   });
 
+  createEffect(() => {
+    const rs = props.radioState;
+    if (!rs?.currentTrackFileId) {
+      lastAdvanceRequestKey = null;
+      lastAdvanceRequestAt = 0;
+      return;
+    }
+
+    const trackKey = `${rs.currentTrackFileId}:${rs.startedAt ?? 0}`;
+    if (lastAdvanceRequestKey !== trackKey) {
+      lastAdvanceRequestKey = null;
+      lastAdvanceRequestAt = 0;
+    }
+  });
+
+  createEffect(() => {
+    const rs = props.radioState;
+    if (!audioRef || !rs?.currentTrackFileId || rs.isPaused) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (!audioRef?.ended) {
+        return;
+      }
+
+      const trackKey = `${rs.currentTrackFileId}:${rs.startedAt ?? 0}`;
+      const now = Date.now();
+      if (lastAdvanceRequestKey === trackKey && now - lastAdvanceRequestAt < 3000) {
+        return;
+      }
+
+      lastAdvanceRequestKey = trackKey;
+      lastAdvanceRequestAt = now;
+      props.onTrackEnded?.();
+    }, 1000);
+
+    onCleanup(() => clearInterval(interval));
+  });
+
   return (
     <>
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={audioRef} style={{ display: "none" }} />
-      <Show when={autoplayBlocked()}>
-        <button
-          class="mt-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-white/70 transition hover:bg-white/15 hover:text-white"
-          type="button"
-          onClick={() => {
-            setAutoplayBlocked(false);
-            seekToSync();
-          }}
-        >
-          Click to enable audio
-        </button>
-      </Show>
+      {/* biome-ignore lint/a11y/useMediaCaption: hidden radio audio element has no captions */}
+      <audio
+        ref={audioRef}
+        autoplay
+        style={{ display: "none" }}
+        preload="auto"
+        playsInline
+        onLoadedMetadata={() => {
+          const fileId = props.radioState?.currentTrackFileId;
+          if (!fileId || !audioRef || !Number.isFinite(audioRef.duration) || audioRef.duration <= 0) {
+            return;
+          }
+
+          void reportAudioDuration.mutate({
+            fileId,
+            durationMs: Math.round(audioRef.duration * 1000),
+          });
+        }}
+        onEnded={() => props.onTrackEnded?.()}
+      />
     </>
   );
 }

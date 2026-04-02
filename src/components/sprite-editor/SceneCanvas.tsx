@@ -681,6 +681,9 @@ function CanvasWithScene(props: {
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
+      isCurrentlyPlaying?: boolean;
+      isNextTrack?: boolean;
+      animRotationSpeed?: number;
     }
   ) => {
     const view = getAssetView(asset);
@@ -721,6 +724,13 @@ function CanvasWithScene(props: {
       ...(patch.bgRepeat !== undefined ? { bgRepeat: patch.bgRepeat } : {}),
       ...(patch.bgPosition !== undefined ? { bgPosition: patch.bgPosition } : {}),
       ...(patch.bgSize !== undefined ? { bgSize: patch.bgSize } : {}),
+      ...(patch.isCurrentlyPlaying !== undefined
+        ? { isCurrentlyPlaying: patch.isCurrentlyPlaying }
+        : {}),
+      ...(patch.isNextTrack !== undefined ? { isNextTrack: patch.isNextTrack } : {}),
+      ...(patch.animRotationSpeed !== undefined
+        ? { animRotationSpeed: patch.animRotationSpeed }
+        : {}),
     });
   };
 
@@ -784,7 +794,7 @@ function CanvasWithScene(props: {
       bgPosition: bgPositionDraft().trim(),
       bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
       opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
-      animRotationSpeed: Number.isFinite(rotSpeed) && rotSpeed !== 0 ? rotSpeed : undefined,
+      animRotationSpeed: Number.isFinite(rotSpeed) ? rotSpeed : 0,
     };
 
     const width = Number(widthDraft().trim());
@@ -1648,7 +1658,7 @@ function CanvasWithScene(props: {
       maxX = Math.max(maxX, x + w);
       maxY = Math.max(maxY, y + h);
     }
-    if (!isFinite(minX)) return null;
+    if (!Number.isFinite(minX)) return null;
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   });
 

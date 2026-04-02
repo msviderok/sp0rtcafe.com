@@ -24,6 +24,7 @@ export default defineSchema({
     size: v.optional(v.number()),
     mimeType: v.optional(v.string()),
     uploadedAt: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
     status: v.union(
       v.literal("pending"),
       v.literal("uploading"),
@@ -37,6 +38,7 @@ export default defineSchema({
   })
     .index("by_uploadThingKey", ["uploadThingKey"])
     .index("by_status", ["status"])
+    .index("by_status_and_fileName", ["status", "fileName"])
     .index("by_fileName", ["fileName"]),
 
   sprites: defineTable({
