@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Index, Show } from "solid-js";
 import type { CharacterManifestWithUrls } from "~/lib/characterCatalog.client";
 
 export default function CharacterPickerRail(props: {
@@ -42,10 +42,10 @@ export default function CharacterPickerRail(props: {
 
       <div ref={viewportRef} class="min-h-0 flex-1 overflow-y-auto p-3 [overflow-anchor:none]">
         <div class="grid gap-2">
-          <For each={props.characters}>
+          <Index each={props.characters}>
             {(character) => {
-              const isCurrent = () => character.id === props.currentCharacterId;
-              const isSelected = () => character.id === props.selectedCharacterId;
+              const isCurrent = () => character().id === props.currentCharacterId;
+              const isSelected = () => character().id === props.selectedCharacterId;
 
               return (
                 <article
@@ -61,22 +61,22 @@ export default function CharacterPickerRail(props: {
                     onClick={(e) => {
                       const scrollTop = viewportRef?.scrollTop ?? null;
                       (e.currentTarget as HTMLButtonElement).blur();
-                      props.onSelectPreview(character.id);
+                      props.onSelectPreview(character().id);
                       restoreScrollPosition(scrollTop);
                     }}
                   >
                     <div class="relative h-28 overflow-hidden border-b border-white/10 bg-[#140d0b]">
-                      <Show when={character.previewUrl}>
+                      <Show when={character().previewUrl}>
                         <div
                           class="absolute inset-0 bg-center bg-contain bg-no-repeat [image-rendering:pixelated]"
                           style={{
-                            "background-image": `url(${character.previewUrl})`,
+                            "background-image": `url(${character().previewUrl})`,
                           }}
                         />
                       </Show>
                       <div class="absolute inset-x-0 top-2 flex items-start justify-between px-2">
                         <div class="rounded-full border border-white/10 bg-black/55 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-white/80">
-                          {character.animationCount} animations
+                          {character().animationCount} animations
                         </div>
                         <Show when={isCurrent()}>
                           <div class="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-emerald-200">
@@ -88,29 +88,29 @@ export default function CharacterPickerRail(props: {
                   </button>
                   <div class="flex items-center justify-between gap-3 px-3 py-2">
                     <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm text-white/90">{character.label}</div>
+                      <div class="truncate text-sm text-white/90">{character().label}</div>
                       <div class="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/40">
-                        {character.quickActionNames.length} quick actions
+                        {character().quickActionNames.length} quick actions
                       </div>
                     </div>
                     <button
                       class="shrink-0 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:text-white/35"
                       type="button"
-                      disabled={isApplyDisabled(character.id)}
+                      disabled={isApplyDisabled(character().id)}
                       onClick={(e) => {
                         const scrollTop = viewportRef?.scrollTop ?? null;
                         (e.currentTarget as HTMLButtonElement).blur();
-                        props.onApply(character.id);
+                        props.onApply(character().id);
                         restoreScrollPosition(scrollTop);
                       }}
                     >
-                      {isPending(character.id) ? "Saving..." : isCurrent() ? "In use" : "Use"}
+                      {isPending(character().id) ? "Saving..." : isCurrent() ? "In use" : "Use"}
                     </button>
                   </div>
                 </article>
               );
             }}
-          </For>
+          </Index>
         </div>
 
         <Show when={selectedCharacter()}>

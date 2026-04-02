@@ -632,7 +632,11 @@ export default function SceneLanding() {
         {/* Left: character picker — always in DOM so pickerMountRef is stable */}
         <div
           ref={pickerMountRef}
-          class={`h-full min-w-0 shrink-0 overflow-hidden border-r border-white/10 bg-[#0e0a09] transition-[width] duration-200 ${isCharacterPickerOpen() ? "w-72" : "w-0 border-r-0"}`}
+          class={`h-full min-w-0 shrink-0 overflow-hidden border-r bg-[#0e0a09] transform-gpu origin-left transition-[width,opacity,transform,border-color] duration-200 ease-out ${
+            isCharacterPickerOpen()
+              ? "w-72 border-white/10 opacity-100 translate-x-0 scale-x-100"
+              : "w-0 border-transparent opacity-0 -translate-x-3 scale-x-95 pointer-events-none"
+          }`}
         />
 
         {/* Center: scene */}
@@ -1644,127 +1648,127 @@ function LandingSceneCanvas(props: {
               "will-change": "transform",
             }}
           >
-          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
-          <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
 
-          <Show
-            when={!assets.isLoading()}
-            fallback={
-              <div class="absolute left-6 top-6 text-sm text-muted-foreground">
-                Loading scene...
-              </div>
-            }
-          >
-            <For each={(assets.data() ?? []) as SceneAsset[]}>
-              {(asset) => (
-                <div
-                  class="absolute [image-rendering:pixelated]"
-                  style={{
-                    left: `${asset.x}px`,
-                    top: `${asset.y}px`,
-                    width: `${asset.width}px`,
-                    height: `${asset.height}px`,
-                    transform: asset.animRotationSpeed
-                      ? undefined
-                      : `rotate(${asset.rotation ?? 0}deg)`,
-                    animation: asset.animRotationSpeed
-                      ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
-                      : undefined,
-                    "animation-direction":
-                      (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
-                    "transform-origin": "center center",
-                  }}
-                >
-                  {isTextSprite(asset.sprite) ? (
-                    <div
-                      class="absolute inset-0 select-none"
-                      style={{
-                        ...getTextSpriteStyle(asset.sprite.text, asset.width, asset.height),
-                        opacity: String(asset.opacity ?? 1),
-                      }}
-                    >
-                      {asset.sprite.text}
-                    </div>
-                  ) : (
-                    <div
-                      class="absolute inset-0"
-                      style={{
-                        "background-image": `url(${asset.sprite.url})`,
-                        "background-repeat":
-                          asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
-                        ...(asset.bgPosition ?? asset.sprite.bgPosition
-                          ? {
-                              "background-position":
-                                asset.bgPosition ?? asset.sprite.bgPosition,
-                            }
-                          : {}),
-                        "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
-                        opacity: String(asset.opacity ?? 1),
-                      }}
-                    />
-                  )}
-                  <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
-                    <CurrentlyPlayingOverlay
-                      trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
-                    />
-                  </Show>
-                  <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
-                    <NextTrackOverlay
-                      trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
-                    />
-                  </Show>
-                  <Show when={asset.isVolumeControl}>
-                    <VolumeControlOverlay
-                      volume={volume()}
-                      muted={muted()}
-                      onDrag={(nextVolume) => {
-                        setMuted(false);
-                        setVolume(nextVolume);
-                      }}
-                      onToggleMute={() => {
-                        setMuted((current) => !current);
-                      }}
-                    />
-                  </Show>
+            <Show
+              when={!assets.isLoading()}
+              fallback={
+                <div class="absolute left-6 top-6 text-sm text-muted-foreground">
+                  Loading scene...
                 </div>
+              }
+            >
+              <For each={(assets.data() ?? []) as SceneAsset[]}>
+                {(asset) => (
+                  <div
+                    class="absolute [image-rendering:pixelated]"
+                    style={{
+                      left: `${asset.x}px`,
+                      top: `${asset.y}px`,
+                      width: `${asset.width}px`,
+                      height: `${asset.height}px`,
+                      transform: asset.animRotationSpeed
+                        ? undefined
+                        : `rotate(${asset.rotation ?? 0}deg)`,
+                      animation: asset.animRotationSpeed
+                        ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
+                        : undefined,
+                      "animation-direction":
+                        (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
+                      "transform-origin": "center center",
+                    }}
+                  >
+                    {isTextSprite(asset.sprite) ? (
+                      <div
+                        class="absolute inset-0 select-none"
+                        style={{
+                          ...getTextSpriteStyle(asset.sprite.text, asset.width, asset.height),
+                          opacity: String(asset.opacity ?? 1),
+                        }}
+                      >
+                        {asset.sprite.text}
+                      </div>
+                    ) : (
+                      <div
+                        class="absolute inset-0"
+                        style={{
+                          "background-image": `url(${asset.sprite.url})`,
+                          "background-repeat":
+                            asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
+                          ...((asset.bgPosition ?? asset.sprite.bgPosition)
+                            ? {
+                                "background-position": asset.bgPosition ?? asset.sprite.bgPosition,
+                              }
+                            : {}),
+                          "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
+                          opacity: String(asset.opacity ?? 1),
+                        }}
+                      />
+                    )}
+                    <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
+                      <CurrentlyPlayingOverlay
+                        trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
+                      />
+                    </Show>
+                    <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
+                      <NextTrackOverlay
+                        trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
+                      />
+                    </Show>
+                    <Show when={asset.isVolumeControl}>
+                      <VolumeControlOverlay
+                        volume={volume()}
+                        muted={muted()}
+                        onDrag={(nextVolume) => {
+                          setMuted(false);
+                          setVolume(nextVolume);
+                        }}
+                        onToggleMute={() => {
+                          setMuted((current) => !current);
+                        }}
+                      />
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
+
+            <For each={otherCharacters()}>
+              {(character, index) => (
+                <RemoteCharacterBody
+                  characterSprite={character.profileOptions.characterSprite ?? null}
+                  currentAnimation={character.currentAnimation}
+                  facing={character.facing}
+                  label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
+                  color={character.color}
+                  x={character.x}
+                  y={character.y}
+                  width={character.width}
+                  height={character.height}
+                  actions={character.actions}
+                  lastProcessedSequence={character.lastProcessedSequence}
+                />
               )}
             </For>
-          </Show>
 
-          <For each={otherCharacters()}>
-            {(character, index) => (
-              <RemoteCharacterBody
-                characterSprite={character.profileOptions.characterSprite ?? null}
-                currentAnimation={character.currentAnimation}
-                facing={character.facing}
-                label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
-                color={character.color}
-                x={character.x}
-                y={character.y}
-                width={character.width}
-                height={character.height}
-                actions={character.actions}
-                lastProcessedSequence={character.lastProcessedSequence}
-              />
-            )}
-          </For>
-
-          <Show when={socketConnected() ? playerState() : null}>
-            {(state) => (
-              <CharacterBody
-                characterSprite={selectedCharacterId()}
-                currentAnimation={currentAnimationState().currentAnimation}
-                facing={currentAnimationState().facing}
-                label={playerLabel()}
-                color={playerColor()}
-                x={state().x}
-                y={state().y}
-                width={CHARACTER_WIDTH}
-                height={CHARACTER_HEIGHT}
-              />
-            )}
-          </Show>
-          </div>{/* end world div */}
+            <Show when={socketConnected() ? playerState() : null}>
+              {(state) => (
+                <CharacterBody
+                  characterSprite={selectedCharacterId()}
+                  currentAnimation={currentAnimationState().currentAnimation}
+                  facing={currentAnimationState().facing}
+                  label={playerLabel()}
+                  color={playerColor()}
+                  x={state().x}
+                  y={state().y}
+                  width={CHARACTER_WIDTH}
+                  height={CHARACTER_HEIGHT}
+                />
+              )}
+            </Show>
+          </div>
+          {/* end world div */}
 
           {/* Quick actions overlay — bottom center of the scene */}
           <div class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
@@ -1777,8 +1781,10 @@ function LandingSceneCanvas(props: {
               />
             </div>
           </div>
-        </div>{/* end scene viewport div */}
-      </div>{/* end outer container div */}
+        </div>
+        {/* end scene viewport div */}
+      </div>
+      {/* end outer container div */}
 
       <Show
         when={
@@ -1861,7 +1867,12 @@ function LandingSceneCanvas(props: {
           PLAYABLE_CHARACTER_CATALOG_WITH_URLS.length > 0
         }
       >
-        <Portal mount={props.pickerMount}>
+        <Portal
+          mount={props.pickerMount}
+          ref={(el) => {
+            el.style.display = "contents";
+          }}
+        >
           <CharacterPickerRail
             characters={PLAYABLE_CHARACTER_CATALOG_WITH_URLS}
             currentCharacterId={appliedCharacterId()}
@@ -2373,7 +2384,7 @@ function RemoteCharacterBody(props: {
           "transform-origin": "center center",
         }}
       />
-      <div class="absolute inset-x-0 -top-6 flex justify-center">
+      <div class="absolute inset-x-0 top-35 flex justify-center">
         <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
           {props.label}
         </div>
@@ -2422,7 +2433,7 @@ function CharacterBody(props: {
           />
         )}
       </Show>
-      <div class="absolute inset-x-0 flex justify-center top-10">
+      <div class="absolute inset-x-0 flex justify-center top-35">
         <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
           {props.label}
         </div>
