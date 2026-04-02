@@ -30,12 +30,11 @@ function formatRelativeTime(timestamp: number) {
   return relativeTimeFormatter.format(elapsedDays, "day");
 }
 
-export default function ChatBox() {
+export default function ChatBox(props: { onClose: () => void }) {
   const convexAuth = useConvexClerkAuth();
   const currentUserBootstrap = useCurrentUserBootstrap();
   const messagesQuery = useQuery(api.chat.list, {});
   const sendMessage = useMutation(api.chat.send);
-  const [isOpen, setIsOpen] = createSignal(true);
   const [body, setBody] = createSignal("");
   const [isSending, setIsSending] = createSignal(false);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -44,11 +43,10 @@ export default function ChatBox() {
   let messagesRef: HTMLDivElement | undefined;
 
   createEffect(() => {
-    isOpen();
     messages().length;
 
     queueMicrotask(() => {
-      if (!isOpen() || !messagesRef) {
+      if (!messagesRef) {
         return;
       }
 
@@ -78,30 +76,17 @@ export default function ChatBox() {
   };
 
   return (
-    <div class="pointer-events-none fixed bottom-4 right-4 z-50 flex items-end justify-end max-sm:left-4">
-      <Show
-        when={isOpen()}
-        fallback={
+    <aside class="flex h-full w-[22rem] min-w-[22rem] shrink-0 flex-col border-l border-white/10 bg-[#0e0a09]">
+        <header class="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <div class="text-xs uppercase tracking-[0.22em] text-white/45">Chat</div>
           <button
-            class="pointer-events-auto rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs uppercase tracking-[0.22em] text-white/90 shadow-[0_12px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm transition hover:bg-black/70"
-            onClick={() => setIsOpen(true)}
+            class="text-xs uppercase tracking-[0.22em] text-white/55 transition hover:text-white"
+            onClick={() => props.onClose()}
             type="button"
           >
-            Chat
+            Close
           </button>
-        }
-      >
-        <section class="pointer-events-auto flex h-[400px] w-[320px] max-w-[calc(100vw-2rem)] flex-col rounded-[4px] border border-white/10 bg-black/20 shadow-[0_18px_50px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-          <header class="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <div class="text-xs uppercase tracking-[0.22em] text-white/45">Chat</div>
-            <button
-              class="text-xs uppercase tracking-[0.22em] text-white/55 transition hover:text-white"
-              onClick={() => setIsOpen(false)}
-              type="button"
-            >
-              Close
-            </button>
-          </header>
+        </header>
 
           <div class="flex min-h-0 flex-1 flex-col px-4 py-3">
             <div class="text-xs uppercase tracking-[0.22em] text-white/45">Global channel</div>
@@ -119,24 +104,24 @@ export default function ChatBox() {
                   <div class="space-y-3 pb-1">
                     <For each={messages()}>
                       {(message) => (
-                        <article class="space-y-1">
+                        <article class="space-y-0.5">
                           <div class="flex items-center gap-2">
                             <span
-                              class="h-2 w-2 rounded-full"
+                              class="h-2 w-2 shrink-0 rounded-full"
                               style={{
                                 "background-color": message.color ?? DEFAULT_MESSAGE_DOT_COLOR,
                               }}
                             />
-                            <span class="text-[10px] text-white/80">{message.nickname}</span>
-                            <time
-                              class="text-[10px] text-white/35"
-                              dateTime={new Date(message._creationTime).toISOString()}
-                              title={new Date(message._creationTime).toLocaleString()}
-                            >
-                              {formatRelativeTime(message._creationTime)}
-                            </time>
+                            <span class="text-[10px] font-medium text-white/80">{message.nickname}</span>
                           </div>
-                          <p class="break-words text-sm text-white/70">{message.body}</p>
+                          <time
+                            class="block pl-4 text-[9px] text-white/30"
+                            dateTime={new Date(message._creationTime).toISOString()}
+                            title={new Date(message._creationTime).toLocaleString()}
+                          >
+                            {formatRelativeTime(message._creationTime)}
+                          </time>
+                          <p class="break-words pl-4 text-sm text-white/70">{message.body}</p>
                         </article>
                       )}
                     </For>
@@ -209,8 +194,6 @@ export default function ChatBox() {
               </Show>
             </Show>
           </footer>
-        </section>
-      </Show>
-    </div>
+      </aside>
   );
 }

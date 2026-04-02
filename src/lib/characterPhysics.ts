@@ -25,7 +25,7 @@ export type SpawnOccupant = {
 
 export const CHARACTER_WIDTH = 200;
 export const CHARACTER_HEIGHT = 200;
-export const MOVE_SPEED = 700;
+export const MOVE_SPEED = 500;
 export const JUMP_VELOCITY = 720;
 export const GRAVITY = 1800;
 

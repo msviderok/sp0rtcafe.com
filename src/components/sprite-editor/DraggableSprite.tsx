@@ -1,4 +1,5 @@
 import { useDraggable } from '@dnd-kit/solid';
+import { getTextSpriteStyle, isTextSprite, summarizeTextSprite } from '~/lib/textSprites';
 import { DRAWER_SPRITE_DRAG_TYPE, type DrawerSprite } from './spriteDrag';
 
 export default function DraggableSprite(props: {
@@ -15,7 +16,10 @@ export default function DraggableSprite(props: {
 		},
 	});
 
-	const displayName = () => props.sprite.key.replace(/\.[^.]+$/, '');
+	const displayName = () =>
+		isTextSprite(props.sprite)
+			? summarizeTextSprite(props.sprite.text)
+			: props.sprite.key.replace(/\.[^.]+$/, '');
 
 	return (
 		<button
@@ -28,16 +32,28 @@ export default function DraggableSprite(props: {
 			class={`touch-none flex w-full cursor-grab items-center gap-2.5 rounded-lg border border-transparent bg-muted/50 p-1.5 text-left transition hover:border-primary/30 hover:bg-accent active:cursor-grabbing ${isDragging() ? 'opacity-40' : ''}`}
 		>
 			<div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted/60">
-				<img
-					alt={props.sprite.key}
-					class="max-h-full max-w-full object-contain"
-					src={props.sprite.url}
-					draggable={false}
-				/>
+				{isTextSprite(props.sprite) ? (
+					<div
+						class="h-full w-full"
+						style={getTextSpriteStyle(props.sprite.text, 40, 40)}
+					>
+						{props.sprite.text}
+					</div>
+				) : (
+					<img
+						alt={props.sprite.key}
+						class="max-h-full max-w-full object-contain"
+						src={props.sprite.url}
+						draggable={false}
+					/>
+				)}
 			</div>
 			<div class="min-w-0 flex-1">
 				<div class="truncate text-[11px] leading-tight text-foreground/80">{displayName()}</div>
-				<div class="mt-0.5 text-[10px] tabular-nums text-muted-foreground">{props.sprite.width}×{props.sprite.height}</div>
+				<div class="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
+					{isTextSprite(props.sprite) ? 'text · ' : ''}
+					{props.sprite.width}×{props.sprite.height}
+				</div>
 			</div>
 		</button>
 	);

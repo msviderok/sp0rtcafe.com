@@ -107,6 +107,7 @@ async function syncSpriteForFile(ctx: MutationCtx, file: Doc<"files">) {
 
   const spriteData = {
     key: spriteKeyFromFileName(file.fileName),
+    kind: "image" as const,
     url: file.url,
     width: file.width!,
     height: file.height!,

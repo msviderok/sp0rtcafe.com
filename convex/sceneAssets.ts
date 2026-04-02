@@ -5,7 +5,14 @@ import { requireAdminAccess } from "./admin";
 const DEFAULT_MAX_DROP_WIDTH = 320;
 const DEFAULT_MAX_DROP_HEIGHT = 320;
 
-function getMeaningfulSpriteSize(sprite: { width: number; height: number }) {
+function getMeaningfulSpriteSize(sprite: { kind?: "image" | "text"; width: number; height: number }) {
+  if (sprite.kind === "text") {
+    return {
+      width: Math.max(16, Math.round(sprite.width)),
+      height: Math.max(16, Math.round(sprite.height)),
+    };
+  }
+
   const widthScale = DEFAULT_MAX_DROP_WIDTH / sprite.width;
   const heightScale = DEFAULT_MAX_DROP_HEIGHT / sprite.height;
   const scale = Math.min(1, widthScale, heightScale);

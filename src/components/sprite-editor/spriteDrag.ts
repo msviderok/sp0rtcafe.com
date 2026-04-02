@@ -6,6 +6,8 @@ export type DrawerSprite = {
 	_id: Id<'sprites'>;
 	key: string;
 	url: string;
+	kind?: 'image' | 'text';
+	text?: string;
 	width: number;
 	height: number;
 	bgRepeat?: string;

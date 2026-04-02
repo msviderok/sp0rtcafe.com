@@ -1,6 +1,7 @@
 import { SignInButton, useAuth, UserButton } from "clerk-solidjs";
 import { useConvexClient, useMutation, useQuery } from "convex-solidjs";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { Portal } from "solid-js/web";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useConvexClerkAuth } from "../integrations/convex-clerk";
@@ -28,7 +29,7 @@ import {
   resolveCharacterState,
 } from "../lib/characterPhysics";
 import createGameLoop from "../lib/createGameLoop";
-import { getSpriteBackgroundStyle } from "../lib/sceneStyles";
+import { getTextSpriteStyle, isTextSprite } from "../lib/textSprites";
 import ChatBox from "./ChatBox";
 import CharacterPickerRail from "./scene/CharacterPickerRail";
 import QuickActionsBar from "./scene/QuickActionsBar";
@@ -95,6 +96,8 @@ type SceneAsset = {
   animRotationSpeed?: number;
   sprite: {
     url: string;
+    kind?: "image" | "text";
+    text?: string;
     bgRepeat?: string;
     bgPosition?: string;
     bgSize?: string;
@@ -463,6 +466,29 @@ function updateCamera(
   };
 }
 
+function getCenteredCamera(
+  playerX: number,
+  playerY: number,
+  vpWidth: number,
+  vpHeight: number,
+  sceneWidth: number,
+  sceneHeight: number
+): { x: number; y: number } {
+  const targetX = Math.min(
+    Math.max(0, playerX + PLAYER_FOCUS_OFFSET_X - vpWidth / 2),
+    Math.max(0, sceneWidth - vpWidth)
+  );
+  const targetY = Math.min(
+    Math.max(0, playerY + PLAYER_FOCUS_OFFSET_Y - vpHeight / 2),
+    Math.max(0, sceneHeight - vpHeight)
+  );
+
+  return {
+    x: targetX,
+    y: targetY,
+  };
+}
+
 function SceneLoadingCard(props: { label: string }) {
   return (
     <div class="flex flex-col items-center gap-4 rounded-[4px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
@@ -501,6 +527,9 @@ export default function SceneLanding() {
   const convexAuth = useConvexClerkAuth();
   const currentUserBootstrap = useCurrentUserBootstrap();
   const auth = useAuth();
+  const [isChatOpen, setIsChatOpen] = createSignal(false);
+  const [isCharacterPickerOpen, setIsCharacterPickerOpen] = createSignal(false);
+  let pickerMountRef: HTMLDivElement | undefined;
 
   createEffect(() => {
     if (auth.isLoaded() && !auth.isSignedIn()) {
@@ -509,14 +538,69 @@ export default function SceneLanding() {
   });
 
   return (
-    <main class="min-h-screen bg-[#140d0b] px-4 py-8 text-foreground">
-      <div class="mx-auto mb-4 flex max-w-[2200px] items-center justify-between gap-4">
+    <main class="flex h-screen flex-col overflow-hidden bg-[#140d0b] text-foreground">
+      {/* Header */}
+      <div class="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-[#0e0a09] px-4 py-3">
         <div class="text-[11px] uppercase tracking-[0.22em] text-white/45">
           {convexAuth.isAuthenticated()
             ? "Move: A/D or arrows. Jump: W, Up, Space. Actions: 1-9. Run: Shift."
             : "Sign in with Google or GitHub to play."}
         </div>
         <div class="flex items-center gap-3">
+          <Show when={convexAuth.isAuthenticated()}>
+            <Show
+              when={
+                currentAccess.data()?.canSelectCharacter &&
+                PLAYABLE_CHARACTER_CATALOG_WITH_URLS.length > 0
+              }
+            >
+              <button
+                class={`flex items-center justify-center rounded-full border px-3 py-2 transition ${isCharacterPickerOpen() ? "border-white/25 bg-white/10 text-white" : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"}`}
+                type="button"
+                title="Toggle character picker"
+                onClick={() => setIsCharacterPickerOpen((v) => !v)}
+                aria-label="Toggle character picker"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M20 21a8 8 0 1 0-16 0" />
+                </svg>
+              </button>
+            </Show>
+            <button
+              class={`flex items-center justify-center rounded-full border px-3 py-2 transition ${isChatOpen() ? "border-white/25 bg-white/10 text-white" : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"}`}
+              type="button"
+              title="Toggle chat"
+              onClick={() => setIsChatOpen((v) => !v)}
+              aria-label="Toggle chat"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          </Show>
           <Show
             when={convexAuth.isAuthenticated()}
             fallback={
@@ -543,60 +627,80 @@ export default function SceneLanding() {
         </div>
       </div>
 
-      <div class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[2200px] items-center justify-center">
-        <Show
-          when={!convexAuth.isLoading()}
-          fallback={<SceneLoadingCard label="Checking session" />}
-        >
-          <Show when={convexAuth.isAuthenticated()} fallback={<SceneAuthGate />}>
-            <Show
-              when={currentUserBootstrap.isReady()}
-              fallback={<SceneLoadingCard label="Preparing profile" />}
-            >
+      {/* Body: left panel + center + right panel */}
+      <div class="flex min-h-0 flex-1 overflow-hidden">
+        {/* Left: character picker — always in DOM so pickerMountRef is stable */}
+        <div
+          ref={pickerMountRef}
+          class={`h-full min-w-0 shrink-0 overflow-hidden border-r border-white/10 bg-[#0e0a09] transition-[width] duration-200 ${isCharacterPickerOpen() ? "w-72" : "w-0 border-r-0"}`}
+        />
+
+        {/* Center: scene */}
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
+          <Show
+            when={!convexAuth.isLoading()}
+            fallback={<SceneLoadingCard label="Checking session" />}
+          >
+            <Show when={convexAuth.isAuthenticated()} fallback={<SceneAuthGate />}>
               <Show
-                when={!defaultScene.isLoading()}
-                fallback={<SceneLoadingCard label="Loading scene" />}
+                when={currentUserBootstrap.isReady()}
+                fallback={<SceneLoadingCard label="Preparing profile" />}
               >
                 <Show
-                  when={defaultScene.data()}
-                  fallback={
-                    <div class="flex max-w-md flex-col items-center gap-4 rounded-[4px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
-                      <div class="text-xs uppercase tracking-[0.22em] text-white/45">
-                        No scene yet
-                      </div>
-                      <div class="text-sm text-white/70">
-                        Create a scene first, then set it as default.
-                      </div>
-                      <Show when={currentAccess.data()?.isAdmin}>
-                        <a
-                          class="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15"
-                          href="/editor"
-                        >
-                          Open editor
-                        </a>
-                      </Show>
-                    </div>
-                  }
+                  when={!defaultScene.isLoading()}
+                  fallback={<SceneLoadingCard label="Loading scene" />}
                 >
-                  {(scene) => (
-                    <LandingSceneCanvas
-                      sceneId={scene()._id}
-                      width={scene().width}
-                      height={scene().height}
-                    />
-                  )}
+                  <Show
+                    when={defaultScene.data()}
+                    fallback={
+                      <div class="flex max-w-md flex-col items-center gap-4 rounded-[4px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
+                        <div class="text-xs uppercase tracking-[0.22em] text-white/45">
+                          No scene yet
+                        </div>
+                        <div class="text-sm text-white/70">
+                          Create a scene first, then set it as default.
+                        </div>
+                        <Show when={currentAccess.data()?.isAdmin}>
+                          <a
+                            class="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15"
+                            href="/editor"
+                          >
+                            Open editor
+                          </a>
+                        </Show>
+                      </div>
+                    }
+                  >
+                    {(scene) => (
+                      <LandingSceneCanvas
+                        sceneId={scene()._id}
+                        width={scene().width}
+                        height={scene().height}
+                        pickerMount={pickerMountRef}
+                      />
+                    )}
+                  </Show>
                 </Show>
               </Show>
             </Show>
           </Show>
+        </div>
+
+        {/* Right: chat */}
+        <Show when={isChatOpen()}>
+          <ChatBox onClose={() => setIsChatOpen(false)} />
         </Show>
       </div>
-      <ChatBox />
     </main>
   );
 }
 
-function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; height: number }) {
+function LandingSceneCanvas(props: {
+  sceneId: Id<"scenes">;
+  width: number;
+  height: number;
+  pickerMount: HTMLElement | undefined;
+}) {
   const convex = useConvexClient();
   const { userId } = useAuth();
   const currentUserBootstrap = useCurrentUserBootstrap();
@@ -625,7 +729,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const [currentFacing, setCurrentFacing] = createSignal<CharacterFacing>("right");
   const [activeManualActionName, setActiveManualActionName] = createSignal<string | null>(null);
   const [isRunKeyHeld, setIsRunKeyHeld] = createSignal(false);
-  const [isCharacterPickerOpen, setIsCharacterPickerOpen] = createSignal(true);
   const [pickerPreviewCharacterId, setPickerPreviewCharacterId] = createSignal<string>(
     getDefaultPlayableCharacterId()
   );
@@ -649,6 +752,8 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let containerRef: HTMLDivElement | undefined;
   let cameraInitialized = false;
   let hasInitializedPickerPreview = false;
+  let lastCameraViewportWidth = -1;
+  let lastCameraViewportHeight = -1;
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
   const ownCharacter = createMemo(() =>
@@ -1050,18 +1155,47 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
     const vpW = untrack(viewportWidth);
     const vpH = untrack(viewportHeight);
+    const centeredCamera = getCenteredCamera(state.x, state.y, vpW, vpH, props.width, props.height);
 
-    const targetX = Math.min(
-      Math.max(0, state.x + PLAYER_FOCUS_OFFSET_X - vpW / 2),
-      Math.max(0, props.width - vpW)
-    );
-    const targetY = Math.min(
-      Math.max(0, state.y + PLAYER_FOCUS_OFFSET_Y - vpH / 2),
-      Math.max(0, props.height - vpH)
+    lastCameraViewportWidth = vpW;
+    lastCameraViewportHeight = vpH;
+    setCameraX(centeredCamera.x);
+    setCameraY(centeredCamera.y);
+  });
+
+  createEffect(() => {
+    const state = playerState();
+    const vpW = viewportWidth();
+    const vpH = viewportHeight();
+
+    const viewportChanged = vpW !== lastCameraViewportWidth || vpH !== lastCameraViewportHeight;
+    lastCameraViewportWidth = vpW;
+    lastCameraViewportHeight = vpH;
+
+    if (!viewportChanged || !state || !cameraInitialized) {
+      return;
+    }
+
+    if (props.width <= vpW && props.height <= vpH) {
+      setCameraX(0);
+      setCameraY(0);
+      return;
+    }
+
+    const adjustedCamera = updateCamera(
+      state.x,
+      state.y,
+      untrack(cameraX),
+      untrack(cameraY),
+      vpW,
+      vpH,
+      props.width,
+      props.height,
+      1
     );
 
-    setCameraX(targetX);
-    setCameraY(targetY);
+    setCameraX(adjustedCamera.x);
+    setCameraY(adjustedCamera.y);
   });
 
   createEffect(() => {
@@ -1481,25 +1615,28 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
 
   return (
-    <div class="flex w-full flex-col gap-3 xl:flex-row xl:items-start">
-      <div ref={containerRef} class="min-w-0" style={{ "max-width": "100%", "max-height": "100%" }}>
-        <Show when={currentUserBootstrap.error()}>
-          {(errorMessage) => (
-            <div class="mb-3 rounded-[4px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-              {errorMessage()}
-            </div>
-          )}
-        </Show>
+    <div class="flex min-h-0 w-full flex-1 flex-col">
+      <Show when={currentUserBootstrap.error()}>
+        {(errorMessage) => (
+          <div class="mx-4 mt-4 rounded-[4px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+            {errorMessage()}
+          </div>
+        )}
+      </Show>
 
+      {/* Outer container — fills remaining space, watched by ResizeObserver */}
+      <div ref={containerRef} class="flex min-h-0 flex-1 items-center justify-center p-3">
+        {/* Scene viewport — clipped to scene/viewport size */}
         <div
-          class="overflow-hidden rounded-[4px] border border-white/10 bg-black/20 backdrop-blur-sm"
+          class="relative overflow-hidden rounded-[4px] border border-white/10 bg-[#1e1512]"
           style={{
             width: `${viewportWidth()}px`,
             height: `${viewportHeight()}px`,
           }}
         >
+          {/* World — positioned by camera translate */}
           <div
-            class="relative overflow-hidden bg-[#1e1512]"
+            class="absolute"
             style={{
               width: `${props.width}px`,
               height: `${props.height}px`,
@@ -1507,150 +1644,172 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               "will-change": "transform",
             }}
           >
-            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
+          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
+          <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
 
-            <Show
-              when={!assets.isLoading()}
-              fallback={
-                <div class="absolute left-6 top-6 text-sm text-muted-foreground">
-                  Loading scene...
-                </div>
-              }
-            >
-              <For each={(assets.data() ?? []) as SceneAsset[]}>
-                {(asset) => (
-                  <div
-                    class="absolute [image-rendering:pixelated]"
-                    style={{
-                      left: `${asset.x}px`,
-                      top: `${asset.y}px`,
-                      width: `${asset.width}px`,
-                      height: `${asset.height}px`,
-                      transform: asset.animRotationSpeed
-                        ? undefined
-                        : `rotate(${asset.rotation ?? 0}deg)`,
-                      animation: asset.animRotationSpeed
-                        ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
-                        : undefined,
-                      "animation-direction":
-                        (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
-                      "transform-origin": "center center",
-                    }}
-                  >
+          <Show
+            when={!assets.isLoading()}
+            fallback={
+              <div class="absolute left-6 top-6 text-sm text-muted-foreground">
+                Loading scene...
+              </div>
+            }
+          >
+            <For each={(assets.data() ?? []) as SceneAsset[]}>
+              {(asset) => (
+                <div
+                  class="absolute [image-rendering:pixelated]"
+                  style={{
+                    left: `${asset.x}px`,
+                    top: `${asset.y}px`,
+                    width: `${asset.width}px`,
+                    height: `${asset.height}px`,
+                    transform: asset.animRotationSpeed
+                      ? undefined
+                      : `rotate(${asset.rotation ?? 0}deg)`,
+                    animation: asset.animRotationSpeed
+                      ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
+                      : undefined,
+                    "animation-direction":
+                      (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
+                    "transform-origin": "center center",
+                  }}
+                >
+                  {isTextSprite(asset.sprite) ? (
+                    <div
+                      class="absolute inset-0 select-none"
+                      style={{
+                        ...getTextSpriteStyle(asset.sprite.text, asset.width, asset.height),
+                        opacity: String(asset.opacity ?? 1),
+                      }}
+                    >
+                      {asset.sprite.text}
+                    </div>
+                  ) : (
                     <div
                       class="absolute inset-0"
                       style={{
-                        ...getSpriteBackgroundStyle({
-                          url: asset.sprite.url,
-                          bgRepeat: asset.bgRepeat ?? asset.sprite.bgRepeat,
-                          bgPosition: asset.bgPosition ?? asset.sprite.bgPosition,
-                          bgSize: asset.bgSize ?? asset.sprite.bgSize,
-                        }),
+                        "background-image": `url(${asset.sprite.url})`,
+                        "background-repeat":
+                          asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
+                        ...(asset.bgPosition ?? asset.sprite.bgPosition
+                          ? {
+                              "background-position":
+                                asset.bgPosition ?? asset.sprite.bgPosition,
+                            }
+                          : {}),
+                        "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
                         opacity: String(asset.opacity ?? 1),
                       }}
                     />
-                    <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
-                      <CurrentlyPlayingOverlay
-                        trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
-                      />
-                    </Show>
-                    <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
-                      <NextTrackOverlay
-                        trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
-                      />
-                    </Show>
-                    <Show when={asset.isVolumeControl}>
-                      <VolumeControlOverlay
-                        volume={volume()}
-                        muted={muted()}
-                        onDrag={(nextVolume) => {
-                          setMuted(false);
-                          setVolume(nextVolume);
-                        }}
-                        onToggleMute={() => {
-                          setMuted((current) => !current);
-                        }}
-                      />
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </Show>
-
-            <For each={otherCharacters()}>
-              {(character, index) => (
-                <RemoteCharacterBody
-                  characterSprite={character.profileOptions.characterSprite ?? null}
-                  currentAnimation={character.currentAnimation}
-                  facing={character.facing}
-                  label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
-                  color={character.color}
-                  x={character.x}
-                  y={character.y}
-                  width={character.width}
-                  height={character.height}
-                  actions={character.actions}
-                  lastProcessedSequence={character.lastProcessedSequence}
-                />
+                  )}
+                  <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
+                    <CurrentlyPlayingOverlay
+                      trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
+                    />
+                  </Show>
+                  <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
+                    <NextTrackOverlay
+                      trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
+                    />
+                  </Show>
+                  <Show when={asset.isVolumeControl}>
+                    <VolumeControlOverlay
+                      volume={volume()}
+                      muted={muted()}
+                      onDrag={(nextVolume) => {
+                        setMuted(false);
+                        setVolume(nextVolume);
+                      }}
+                      onToggleMute={() => {
+                        setMuted((current) => !current);
+                      }}
+                    />
+                  </Show>
+                </div>
               )}
             </For>
+          </Show>
 
-            <Show when={socketConnected() ? playerState() : null}>
-              {(state) => (
-                <CharacterBody
-                  characterSprite={selectedCharacterId()}
-                  currentAnimation={currentAnimationState().currentAnimation}
-                  facing={currentAnimationState().facing}
-                  label={playerLabel()}
-                  color={playerColor()}
-                  x={state().x}
-                  y={state().y}
-                  width={CHARACTER_WIDTH}
-                  height={CHARACTER_HEIGHT}
-                />
-              )}
-            </Show>
+          <For each={otherCharacters()}>
+            {(character, index) => (
+              <RemoteCharacterBody
+                characterSprite={character.profileOptions.characterSprite ?? null}
+                currentAnimation={character.currentAnimation}
+                facing={character.facing}
+                label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
+                color={character.color}
+                x={character.x}
+                y={character.y}
+                width={character.width}
+                height={character.height}
+                actions={character.actions}
+                lastProcessedSequence={character.lastProcessedSequence}
+              />
+            )}
+          </For>
+
+          <Show when={socketConnected() ? playerState() : null}>
+            {(state) => (
+              <CharacterBody
+                characterSprite={selectedCharacterId()}
+                currentAnimation={currentAnimationState().currentAnimation}
+                facing={currentAnimationState().facing}
+                label={playerLabel()}
+                color={playerColor()}
+                x={state().x}
+                y={state().y}
+                width={CHARACTER_WIDTH}
+                height={CHARACTER_HEIGHT}
+              />
+            )}
+          </Show>
+          </div>{/* end world div */}
+
+          {/* Quick actions overlay — bottom center of the scene */}
+          <div class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+            <div class="pointer-events-auto">
+              <QuickActionsBar
+                actions={quickActionHotkeys()}
+                activeActionName={activeManualActionName()}
+                isRunActive={currentAnimationState().isRunning}
+                runAvailable={selectedCharacter()?.hasRun ?? false}
+              />
+            </div>
           </div>
-        </div>
+        </div>{/* end scene viewport div */}
+      </div>{/* end outer container div */}
 
-        <QuickActionsBar
-          actions={quickActionHotkeys()}
-          activeActionName={activeManualActionName()}
-          isRunActive={currentAnimationState().isRunning}
-          runAvailable={selectedCharacter()?.hasRun ?? false}
-        />
-
-        <RadioPlayer
-          radioState={radioState.data() ?? null}
-          isConnected={socketConnected()}
-          onTrackEnded={handleTrackEnded}
-          volume={volume()}
-          muted={muted()}
-        />
-
-        <Show
-          when={
-            currentAccess.data()?.isAdmin &&
-            (radioState.data()?.currentTrackUrl || radioState.data()?.nextTrackUrl)
-          }
-        >
-          <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[4px] border border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm">
+      <Show
+        when={
+          currentAccess.data()?.isAdmin &&
+          (radioState.data()?.currentTrackUrl || radioState.data()?.nextTrackUrl)
+        }
+      >
+        <div class="px-3 pb-3">
+          <div
+            class="mx-auto flex w-full flex-wrap items-center gap-3 rounded-[4px] border border-white/10 bg-black/30 px-4 py-3 backdrop-blur-sm"
+            style={{
+              "max-width": `${viewportWidth()}px`,
+            }}
+          >
             <div class="text-[10px] uppercase tracking-[0.18em] text-white/40">Radio</div>
 
-            <Show when={radioState.data()?.currentTrackName}>
-              <div class="truncate text-xs text-white/70">
-                Now: {radioState.data()?.currentTrackName}
-              </div>
-            </Show>
+            <div class="min-w-0 flex-1">
+              <Show when={radioState.data()?.currentTrackName}>
+                <div class="truncate text-xs text-white/70">
+                  Now: {radioState.data()?.currentTrackName}
+                </div>
+              </Show>
 
-            <Show when={radioState.data()?.nextTrackName}>
-              <div class="truncate text-xs text-white/50">
-                Next: {radioState.data()?.nextTrackName}
-              </div>
-            </Show>
+              <Show when={radioState.data()?.nextTrackName}>
+                <div class="truncate text-xs text-white/50">
+                  Next: {radioState.data()?.nextTrackName}
+                </div>
+              </Show>
+            </div>
 
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-wrap items-center gap-1.5">
               <button
                 class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
                 type="button"
@@ -1660,7 +1819,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               >
                 Prev
               </button>
-
               <button
                 class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
                 type="button"
@@ -1670,7 +1828,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               >
                 Next
               </button>
-
               <button
                 class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
                 type="button"
@@ -1686,25 +1843,34 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               </button>
             </div>
           </div>
-        </Show>
-      </div>
+        </div>
+      </Show>
+
+      <RadioPlayer
+        radioState={radioState.data() ?? null}
+        isConnected={socketConnected()}
+        onTrackEnded={handleTrackEnded}
+        volume={volume()}
+        muted={muted()}
+      />
 
       <Show
         when={
+          props.pickerMount &&
           currentAccess.data()?.canSelectCharacter &&
           PLAYABLE_CHARACTER_CATALOG_WITH_URLS.length > 0
         }
       >
-        <CharacterPickerRail
-          characters={PLAYABLE_CHARACTER_CATALOG_WITH_URLS}
-          currentCharacterId={appliedCharacterId()}
-          isOpen={isCharacterPickerOpen()}
-          pendingCharacterId={pendingSelectedCharacterId()}
-          onApply={handleSelectCharacter}
-          onOpenChange={setIsCharacterPickerOpen}
-          onSelectPreview={setPickerPreviewCharacterId}
-          selectedCharacterId={pickerPreviewCharacterId()}
-        />
+        <Portal mount={props.pickerMount}>
+          <CharacterPickerRail
+            characters={PLAYABLE_CHARACTER_CATALOG_WITH_URLS}
+            currentCharacterId={appliedCharacterId()}
+            pendingCharacterId={pendingSelectedCharacterId()}
+            onApply={handleSelectCharacter}
+            onSelectPreview={setPickerPreviewCharacterId}
+            selectedCharacterId={pickerPreviewCharacterId()}
+          />
+        </Portal>
       </Show>
     </div>
   );
@@ -2256,7 +2422,7 @@ function CharacterBody(props: {
           />
         )}
       </Show>
-      <div class="absolute inset-x-0 -top-6 flex justify-center">
+      <div class="absolute inset-x-0 flex justify-center top-10">
         <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
           {props.label}
         </div>

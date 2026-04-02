@@ -4,6 +4,7 @@ import { useMutation, useQuery } from 'convex-solidjs';
 import { createEffect, createMemo, createSignal, onCleanup, Show } from 'solid-js';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
+import { getTextSpriteStyle, isTextSprite } from '~/lib/textSprites';
 import SceneCanvas from './SceneCanvas';
 import SpriteSidebar from './SpriteSidebar';
 import { type DrawerSprite, isDrawerSpriteDragData } from './spriteDrag';
@@ -329,7 +330,17 @@ export default function SpriteEditor() {
 							<Show when={!isOverCanvas() && activeDrawerSprite()}>
 								{(sprite) => (
 									<div class="flex h-14 w-14 items-center justify-center rounded-lg bg-card/90 p-1 backdrop-blur-sm">
-										<img alt={sprite().key} class="max-h-full max-w-full object-contain" src={sprite().url} />
+										{isTextSprite(sprite()) ? (
+											<div class="h-full w-full" style={getTextSpriteStyle(sprite().text, 56, 56)}>
+												{sprite().text}
+											</div>
+										) : (
+											<img
+												alt={sprite().key}
+												class="max-h-full max-w-full object-contain"
+												src={sprite().url}
+											/>
+										)}
 									</div>
 								)}
 							</Show>

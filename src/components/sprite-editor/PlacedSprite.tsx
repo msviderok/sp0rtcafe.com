@@ -1,6 +1,7 @@
 import type { JSXElement } from "solid-js";
 import { Popover } from "~/components/ui";
 import { getSpriteBackgroundStyle } from "~/lib/sceneStyles";
+import { getTextSpriteStyle, isTextSprite } from "~/lib/textSprites";
 import { cn } from "~/lib/utils";
 
 const IconSliders = () => (
@@ -30,7 +31,9 @@ const IconCollision = () => (
 );
 
 export type SceneSprite = {
-  url: string;
+  url?: string;
+  kind?: "image" | "text";
+  text?: string;
   width: number;
   height: number;
   opacity?: number;
@@ -88,11 +91,28 @@ export default function PlacedSprite(props: {
       }}
     >
       <div
-        class="absolute inset-0 z-10 bg-no-repeat bg-size-[100%_100%] touch-none"
-        style={{
-          ...getSpriteBackgroundStyle(props.sprite),
-          opacity: String(props.sprite.opacity ?? 1),
-        }}
+        class={cn(
+          "absolute inset-0 z-10 touch-none",
+          isTextSprite(props.sprite)
+            ? "select-none"
+            : "bg-no-repeat bg-size-[100%_100%]"
+        )}
+        style={
+          isTextSprite(props.sprite)
+            ? {
+                ...getTextSpriteStyle(props.sprite.text, props.sprite.width, props.sprite.height),
+                opacity: String(props.sprite.opacity ?? 1),
+              }
+            : {
+                ...getSpriteBackgroundStyle({
+                  url: props.sprite.url ?? "",
+                  bgRepeat: props.sprite.bgRepeat,
+                  bgPosition: props.sprite.bgPosition,
+                  bgSize: props.sprite.bgSize,
+                }),
+                opacity: String(props.sprite.opacity ?? 1),
+              }
+        }
         onPointerDown={(event) => {
           event.stopPropagation();
           props.onSelect(event);
@@ -100,7 +120,9 @@ export default function PlacedSprite(props: {
             props.onMoveStart(event);
           }
         }}
-      />
+      >
+        {isTextSprite(props.sprite) ? props.sprite.text : null}
+      </div>
 
       {props.selectionMode === "single" ? (
         <>

@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 const characterFacingValidator = v.union(v.literal("left"), v.literal("right"));
+const spriteKindValidator = v.union(v.literal("image"), v.literal("text"));
 
 const userProfileOptionsValidator = v.object({
   color: v.optional(v.string()),
@@ -62,7 +63,9 @@ export default defineSchema({
 
   sprites: defineTable({
     key: v.string(),
+    kind: v.optional(spriteKindValidator),
     url: v.string(),
+    text: v.optional(v.string()),
     width: v.number(),
     height: v.number(),
     bgRepeat: v.optional(v.string()),

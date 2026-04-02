@@ -2,6 +2,7 @@ import { useMutation, useQuery } from 'convex-solidjs';
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { future_genUploader } from 'uploadthing/client-future';
 import type { UploadRouter } from '~/server/uploadthing';
+import { measureTextSprite, summarizeTextSprite } from '~/lib/textSprites';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import DraggableSprite from './DraggableSprite';
@@ -17,6 +18,10 @@ function getFileFingerprint(file: Pick<File, 'name' | 'size' | 'lastModified'>) 
 
 function spriteKeyFromFileName(fileName: string) {
 	return fileName.replace(/\.[^.]+$/, '');
+}
+
+function spriteKeyFromText(text: string) {
+	return summarizeTextSprite(text, 36);
 }
 
 function getFileDimensions(file: File): Promise<{ width: number; height: number }> {
@@ -128,17 +133,28 @@ export default function SpriteSidebar(props: {
 	const createSprite = useMutation(api.sprites.create);
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [audioErrorMessage, setAudioErrorMessage] = createSignal<string>();
+	const [textSpriteErrorMessage, setTextSpriteErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
 	const [isUploadingAudio, setIsUploadingAudio] = createSignal(false);
+	const [isCreatingTextSprite, setIsCreatingTextSprite] = createSignal(false);
 	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
 	const [isAudioSectionOpen, setIsAudioSectionOpen] = createSignal(false);
 	const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
+	const [textSpriteDraft, setTextSpriteDraft] = createSignal('');
 	let fileInputRef: HTMLInputElement | undefined;
 	let audioFileInputRef: HTMLInputElement | undefined;
 
 	const sortedSprites = createMemo(() =>
-		[...(sprites.data() ?? [])].sort((left, right) => left.key.localeCompare(right.key)),
+		[...(sprites.data() ?? [])].sort((left, right) => {
+			const leftRank = left.kind === 'text' ? 0 : 1;
+			const rightRank = right.kind === 'text' ? 0 : 1;
+			if (leftRank !== rightRank) {
+				return leftRank - rightRank;
+			}
+
+			return left.key.localeCompare(right.key);
+		}),
 	);
 	const selectedScene = createMemo(() => props.scenes.find((scene) => scene._id === props.selectedSceneId) ?? null);
 
@@ -230,6 +246,7 @@ export default function SpriteSidebar(props: {
 
 						createRequests.push(
 							createSprite.mutate({
+								kind: 'image',
 								key: spriteKeyFromFileName(uploadEvent.file.name),
 								url: uploadEvent.file.url,
 								width: metadata.width,
@@ -320,6 +337,36 @@ export default function SpriteSidebar(props: {
 			setIsUploadingAudio(false);
 			setHasAttemptedAutoplaySeed(false);
 			input.value = '';
+		}
+	};
+
+	const handleCreateTextSprite = async () => {
+		const text = textSpriteDraft().trim();
+
+		if (!text) {
+			setTextSpriteErrorMessage('text req');
+			return;
+		}
+
+		setTextSpriteErrorMessage(undefined);
+		setIsCreatingTextSprite(true);
+
+		try {
+			const { width, height } = await measureTextSprite(text);
+
+			await createSprite.mutate({
+				kind: 'text',
+				key: spriteKeyFromText(text),
+				text,
+				width,
+				height,
+			});
+
+			setTextSpriteDraft('');
+		} catch {
+			setTextSpriteErrorMessage('create fail');
+		} finally {
+			setIsCreatingTextSprite(false);
 		}
 	};
 
@@ -536,6 +583,34 @@ export default function SpriteSidebar(props: {
 								<Show when={errorMessage()}>
 									<div class="mb-2 text-[10px] leading-tight text-destructive">{errorMessage()}</div>
 								</Show>
+
+								<div class="mb-3 rounded-xl border border-border/70 bg-background/60 p-2.5">
+									<div class="mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+										Text sprite
+									</div>
+									<textarea
+										class="min-h-20 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+										value={textSpriteDraft()}
+										placeholder="Type sprite text"
+										onInput={(event) => setTextSpriteDraft(event.currentTarget.value)}
+									/>
+									<div class="mt-2 flex items-center justify-between gap-2">
+										<div class="text-[10px] text-muted-foreground">uses pixel font</div>
+										<button
+											class="rounded-lg border border-border bg-background px-3 py-1.5 text-xs transition hover:bg-accent disabled:opacity-50"
+											type="button"
+											disabled={isCreatingTextSprite()}
+											onClick={() => void handleCreateTextSprite()}
+										>
+											{isCreatingTextSprite() ? 'Adding...' : 'Add text sprite'}
+										</button>
+									</div>
+									<Show when={textSpriteErrorMessage()}>
+										<div class="mt-2 text-[10px] leading-tight text-destructive">
+											{textSpriteErrorMessage()}
+										</div>
+									</Show>
+								</div>
 
 								<Show when={!sprites.isLoading()} fallback={<div class="p-2 text-xs text-muted-foreground">...</div>}>
 									<div class="flex flex-col gap-0.5">

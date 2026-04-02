@@ -3,6 +3,7 @@ import { createHotkey } from "@tanstack/solid-hotkeys";
 import { useMutation, useQuery } from "convex-solidjs";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { DEFAULT_BG_REPEAT, DEFAULT_BG_SIZE, getSpriteBackgroundStyle } from "~/lib/sceneStyles";
+import { getTextSpriteStyle, isTextSprite } from "~/lib/textSprites";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { DndDebugReporter, DndDebugSnapshotReporter } from "./dndDebug";
@@ -580,7 +581,11 @@ function CanvasWithScene(props: {
     };
   };
 
-  const canAssetResizeFreely = (asset: { bgRepeat?: string; sprite: { bgRepeat?: string } }) =>
+  const canAssetResizeFreely = (asset: {
+    bgRepeat?: string;
+    sprite: { kind?: "image" | "text"; bgRepeat?: string };
+  }) =>
+    asset.sprite.kind === "text" ||
     (asset.bgRepeat ?? asset.sprite.bgRepeat ?? DEFAULT_BG_REPEAT) !== "none";
 
   const deleteAsset = (
@@ -667,6 +672,8 @@ function CanvasWithScene(props: {
       sprite: {
         key: string;
         url: string;
+        kind?: "image" | "text";
+        text?: string;
         bgRepeat?: string;
         bgPosition?: string;
         bgSize?: string;
@@ -770,11 +777,16 @@ function CanvasWithScene(props: {
     }
 
     const opacity = Number(opacityDraft().trim());
+    const isText = isTextSprite(asset.sprite);
 
     await applyAssetPatch(asset, {
-      bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
-      bgPosition: bgPositionDraft().trim(),
-      bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
+      ...(isText
+        ? {}
+        : {
+            bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
+            bgPosition: bgPositionDraft().trim(),
+            bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
+          }),
       opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
     });
   };
@@ -793,17 +805,20 @@ function CanvasWithScene(props: {
       width?: number;
       height?: number;
       opacity: number;
-      bgRepeat: string;
-      bgPosition: string;
-      bgSize: string;
+      bgRepeat?: string;
+      bgPosition?: string;
+      bgSize?: string;
       animRotationSpeed?: number;
     } = {
-      bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
-      bgPosition: bgPositionDraft().trim(),
-      bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
       opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
       animRotationSpeed: Number.isFinite(rotSpeed) ? rotSpeed : 0,
     };
+
+    if (!isTextSprite(asset.sprite)) {
+      patch.bgRepeat = bgRepeatDraft() || DEFAULT_BG_REPEAT;
+      patch.bgPosition = bgPositionDraft().trim();
+      patch.bgSize = bgSizeDraft().trim() || DEFAULT_BG_SIZE;
+    }
 
     const width = Number(widthDraft().trim());
     const height = Number(heightDraft().trim());
@@ -818,7 +833,7 @@ function CanvasWithScene(props: {
 
   const applyTilePreset = async (preset: "2x2" | "4x2" | "wall" | "ground" | "fill") => {
     const asset = styleEditorAsset();
-    if (!asset) {
+    if (!asset || isTextSprite(asset.sprite)) {
       return;
     }
 
@@ -1567,7 +1582,7 @@ function CanvasWithScene(props: {
       opacity?: number;
       locked?: boolean;
       bgRepeat?: string;
-      sprite?: { bgRepeat?: string };
+      sprite?: { kind?: "image" | "text"; bgRepeat?: string };
     },
     mode: EditingAsset["mode"],
     event: PointerEvent,
@@ -1806,10 +1821,23 @@ function CanvasWithScene(props: {
               "z-index": nextGhostZIndex(),
             }}
           >
-            <div
-              class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] ${ghost().pending ? "" : "brightness-125"}`}
-              style={getSpriteBackgroundStyle(ghost().sprite)}
-            />
+            {isTextSprite(ghost().sprite) ? (
+              <div
+                class={`absolute inset-0 select-none ${ghost().pending ? "" : "brightness-125"}`}
+                style={getTextSpriteStyle(
+                  ghost().sprite.text,
+                  ghost().sprite.width,
+                  ghost().sprite.height
+                )}
+              >
+                {ghost().sprite.text}
+              </div>
+            ) : (
+              <div
+                class={`absolute inset-0 bg-no-repeat bg-size-[100%_100%] ${ghost().pending ? "" : "brightness-125"}`}
+                style={getSpriteBackgroundStyle(ghost().sprite)}
+              />
+            )}
             <Show when={!ghost().pending}>
               <div class="absolute inset-0 border border-dashed border-primary/60" />
             </Show>
@@ -1877,6 +1905,8 @@ function CanvasWithScene(props: {
                     <PlacedSprite
                       sprite={{
                         url: asset()!.sprite.url,
+                        kind: asset()!.sprite.kind,
+                        text: asset()!.sprite.text,
                         width: view()!.width,
                         height: view()!.height,
                         opacity: view()!.opacity,
@@ -1903,9 +1933,19 @@ function CanvasWithScene(props: {
                         <div class="flex flex-col gap-2.5">
                           <div class="flex items-start gap-2.5">
                             <div
-                              class="size-10 shrink-0 rounded-xl border border-white/10 bg-white/6 bg-contain bg-center bg-no-repeat shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md"
-                              style={{ "background-image": `url(${a().sprite.url})` }}
-                            />
+                              class="size-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md"
+                            >
+                              {isTextSprite(a().sprite) ? (
+                                <div class="h-full w-full" style={getTextSpriteStyle(a().sprite.text, 40, 40)}>
+                                  {a().sprite.text}
+                                </div>
+                              ) : (
+                                <div
+                                  class="h-full w-full bg-contain bg-center bg-no-repeat"
+                                  style={{ "background-image": `url(${a().sprite.url})` }}
+                                />
+                              )}
+                            </div>
                             <div class="min-w-0">
                               <div class="truncate text-[13px] font-medium leading-tight">
                                 {a().sprite.key}
@@ -1919,27 +1959,31 @@ function CanvasWithScene(props: {
 
                           <div class="h-px bg-white/8" />
 
-                          <div class="flex flex-col gap-1">
-                            <div class="text-[10px] uppercase tracking-widest text-white/30">
-                              Presets
-                            </div>
-                            <div class="flex flex-wrap gap-1">
-                              <For each={["2x2", "4x2", "fill", "wall", "ground"] as const}>
-                                {(preset) => (
-                                  <button
-                                    class="rounded-sm border border-white/8 bg-white/6 px-2.5 py-1 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/12 hover:text-white active:scale-95"
-                                    type="button"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => void applyTilePreset(preset)}
-                                  >
-                                    {preset[0].toUpperCase() + preset.slice(1)}
-                                  </button>
-                                )}
-                              </For>
-                            </div>
-                          </div>
+                          <Show when={!isTextSprite(a().sprite)}>
+                            <>
+                              <div class="flex flex-col gap-1">
+                                <div class="text-[10px] uppercase tracking-widest text-white/30">
+                                  Presets
+                                </div>
+                                <div class="flex flex-wrap gap-1">
+                                  <For each={["2x2", "4x2", "fill", "wall", "ground"] as const}>
+                                    {(preset) => (
+                                      <button
+                                        class="rounded-sm border border-white/8 bg-white/6 px-2.5 py-1 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/12 hover:text-white active:scale-95"
+                                        type="button"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => void applyTilePreset(preset)}
+                                      >
+                                        {preset[0].toUpperCase() + preset.slice(1)}
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
+                              </div>
 
-                          <div class="h-px bg-white/8" />
+                              <div class="h-px bg-white/8" />
+                            </>
+                          </Show>
 
                           <div class="flex flex-col gap-1">
                             <div class="text-[10px] uppercase tracking-widest text-white/30">
@@ -1981,48 +2025,60 @@ function CanvasWithScene(props: {
 
                           <div class="grid gap-1">
                             <div class="text-[10px] uppercase tracking-widest text-white/30">
-                              Background
+                              {isTextSprite(a().sprite) ? "Text" : "Background"}
                             </div>
                             <div class="grid gap-1.5">
-                              <select
-                                class="h-8 rounded-xl border border-white/8 bg-white/6 px-2.5 text-xs text-white outline-none transition focus:border-white/16 focus:bg-white/10"
-                                value={bgRepeatDraft()}
-                                onChange={(event) => {
-                                  setBgRepeatDraft(event.currentTarget.value);
-                                  void handleCommitStyleEditor();
-                                }}
-                                onBlur={() => void handleCommitStyleEditor()}
-                              >
-                                <option value="no-repeat">no-repeat</option>
-                                <option value="repeat">repeat</option>
-                                <option value="repeat-x">repeat-x</option>
-                                <option value="repeat-y">repeat-y</option>
-                                <option value="space">space</option>
-                                <option value="round">round</option>
-                              </select>
+                              <Show when={!isTextSprite(a().sprite)}>
+                                <>
+                                  <select
+                                    class="h-8 rounded-xl border border-white/8 bg-white/6 px-2.5 text-xs text-white outline-none transition focus:border-white/16 focus:bg-white/10"
+                                    value={bgRepeatDraft()}
+                                    onChange={(event) => {
+                                      setBgRepeatDraft(event.currentTarget.value);
+                                      void handleCommitStyleEditor();
+                                    }}
+                                    onBlur={() => void handleCommitStyleEditor()}
+                                  >
+                                    <option value="no-repeat">no-repeat</option>
+                                    <option value="repeat">repeat</option>
+                                    <option value="repeat-x">repeat-x</option>
+                                    <option value="repeat-y">repeat-y</option>
+                                    <option value="space">space</option>
+                                    <option value="round">round</option>
+                                  </select>
+                                  <div class="flex flex-col gap-1">
+                                    <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
+                                      Position
+                                      <input
+                                        class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
+                                        value={bgPositionDraft()}
+                                        placeholder="center"
+                                        onInput={(event) =>
+                                          setBgPositionDraft(event.currentTarget.value)
+                                        }
+                                        onBlur={() => void handleCommitStyleEditor()}
+                                      />
+                                    </label>
+                                    <label class="text-[10px] text-white/40 w-auto">
+                                      Size
+                                      <input
+                                        class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
+                                        value={bgSizeDraft()}
+                                        placeholder={DEFAULT_BG_SIZE}
+                                        onInput={(event) => setBgSizeDraft(event.currentTarget.value)}
+                                        onBlur={() => void handleCommitStyleEditor()}
+                                      />
+                                    </label>
+                                  </div>
+                                </>
+                              </Show>
+
+                              <Show when={isTextSprite(a().sprite)}>
+                                <div class="rounded-lg border border-white/8 bg-white/6 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap break-words text-white/70">
+                                  {a().sprite.text}
+                                </div>
+                              </Show>
                               <div class="flex flex-col gap-1">
-                                <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
-                                  Position
-                                  <input
-                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
-                                    value={bgPositionDraft()}
-                                    placeholder="center"
-                                    onInput={(event) =>
-                                      setBgPositionDraft(event.currentTarget.value)
-                                    }
-                                    onBlur={() => void handleCommitStyleEditor()}
-                                  />
-                                </label>
-                                <label class="text-[10px] text-white/40 w-auto">
-                                  Size
-                                  <input
-                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
-                                    value={bgSizeDraft()}
-                                    placeholder={DEFAULT_BG_SIZE}
-                                    onInput={(event) => setBgSizeDraft(event.currentTarget.value)}
-                                    onBlur={() => void handleCommitStyleEditor()}
-                                  />
-                                </label>
                                 <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
                                   Opacity
                                   <input

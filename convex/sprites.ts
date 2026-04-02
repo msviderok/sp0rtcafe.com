@@ -15,13 +15,38 @@ export const getByUrl = query({
 
 export const create = mutation({
   args: {
+    kind: v.optional(v.union(v.literal("image"), v.literal("text"))),
     key: v.string(),
-    url: v.string(),
+    url: v.optional(v.string()),
+    text: v.optional(v.string()),
     width: v.number(),
     height: v.number(),
   },
   handler: async (ctx, args) => {
     await requireAdminAccess(ctx);
+    const kind = args.kind ?? "image";
+
+    if (kind === "text") {
+      const text = args.text?.trim();
+
+      if (!text) {
+        throw new Error("Text sprite requires text");
+      }
+
+      return await ctx.db.insert("sprites", {
+        key: args.key,
+        kind: "text",
+        url: "",
+        text,
+        width: args.width,
+        height: args.height,
+      });
+    }
+
+    if (!args.url) {
+      throw new Error("Image sprite requires url");
+    }
+
     const existing = await ctx.db
       .query("sprites")
       .withIndex("by_url", (q) => q.eq("url", args.url))
@@ -31,7 +56,13 @@ export const create = mutation({
       return existing._id;
     }
 
-    return await ctx.db.insert("sprites", args);
+    return await ctx.db.insert("sprites", {
+      key: args.key,
+      kind: "image",
+      url: args.url,
+      width: args.width,
+      height: args.height,
+    });
   },
 });
 
