@@ -68,6 +68,19 @@ export default defineSchema({
     sceneId: v.id("scenes"),
     sessionId: v.string(),
     tokenIdentifier: v.optional(v.string()),
+    actions: v.optional(
+      v.array(
+        v.object({
+          kind: v.literal("movement"),
+          x: v.number(),
+          y: v.number(),
+          vx: v.number(),
+          vy: v.number(),
+          grounded: v.boolean(),
+          timeSinceBatchStart: v.number(),
+        }),
+      ),
+    ),
     x: v.number(),
     y: v.number(),
     vx: v.number(),
@@ -80,8 +93,6 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_sceneId", ["sceneId"])
-    .index("by_sessionId", ["sessionId"])
-    .index("by_sceneId_and_sessionId", ["sceneId", "sessionId"])
     .index("by_sceneId_and_tokenIdentifier", ["sceneId", "tokenIdentifier"])
     .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
 });

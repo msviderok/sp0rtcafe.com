@@ -23,6 +23,7 @@ type SceneCharacter = {
   _creationTime: number;
   sceneId: Id<"scenes">;
   sessionId?: string;
+  actions: CharacterMovementAction[];
   x: number;
   y: number;
   vx: number;
@@ -34,6 +35,16 @@ type SceneCharacter = {
   lastProcessedSequence: number;
   updatedAt: number;
   isCurrentUser: boolean;
+};
+
+type CharacterMovementAction = {
+  kind: "movement";
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  grounded: boolean;
+  timeSinceBatchStart: number;
 };
 
 type SceneAsset = {
@@ -56,14 +67,18 @@ type SceneAsset = {
 };
 
 const SCENE_SESSION_KEY = "__sp0rtcafeSceneSessionId";
-const MOVEMENT_SAMPLE_INTERVAL_MS = 100;
-const MOVEMENT_BATCH_INTERVAL_MS = 100;
+const LAST_CHARACTER_STATE_KEY_PREFIX = "__sp0rtcafeLastCharacterState";
+const MOVEMENT_SAMPLE_INTERVAL_MS = 16;
+const MOVEMENT_BATCH_INTERVAL_MS = 50;
 const IDLE_PRESENCE_INTERVAL_MS = 5_000;
-const REMOTE_PREDICTION_WINDOW_MS = 120;
 
 type CharacterSyncState = CharacterState & {
   clientSequence: number;
   timeSinceBatchStart: number;
+};
+
+type StoredCharacterSnapshot = CharacterState & {
+  lastProcessedSequence: number;
 };
 
 function createSceneSessionUuid() {
@@ -84,6 +99,18 @@ function createSceneSessionUuid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function shouldReuseStoredSceneSessionId() {
+  try {
+    const navigationEntry = performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+
+    return navigationEntry?.type === "reload" || navigationEntry?.type === "back_forward";
+  } catch {
+    return false;
+  }
+}
+
 function ensureSceneSessionId() {
   const sceneWindow = window as Window & { [SCENE_SESSION_KEY]?: string };
   const existing = sceneWindow[SCENE_SESSION_KEY];
@@ -92,9 +119,94 @@ function ensureSceneSessionId() {
     return existing;
   }
 
+  try {
+    const stored = shouldReuseStoredSceneSessionId()
+      ? window.sessionStorage.getItem(SCENE_SESSION_KEY)
+      : null;
+
+    if (stored) {
+      sceneWindow[SCENE_SESSION_KEY] = stored;
+      return stored;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to an in-memory session id.
+  }
+
   const next = `session-${createSceneSessionUuid()}`;
   sceneWindow[SCENE_SESSION_KEY] = next;
+
+  try {
+    window.sessionStorage.setItem(SCENE_SESSION_KEY, next);
+  } catch {
+    // Ignore storage access failures and keep the in-memory session id.
+  }
+
   return next;
+}
+
+function clearSceneSessionId() {
+  const sceneWindow = window as Window & { [SCENE_SESSION_KEY]?: string };
+
+  delete sceneWindow[SCENE_SESSION_KEY];
+
+  try {
+    window.sessionStorage.removeItem(SCENE_SESSION_KEY);
+  } catch {
+    // Ignore storage access failures.
+  }
+}
+
+function getStoredCharacterSnapshotKey(sceneId: Id<"scenes">, userId: string) {
+  return `${LAST_CHARACTER_STATE_KEY_PREFIX}:${sceneId}:${userId}`;
+}
+
+function readStoredCharacterSnapshot(sceneId: Id<"scenes">, userId: string) {
+  try {
+    const raw = window.localStorage.getItem(getStoredCharacterSnapshotKey(sceneId, userId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredCharacterSnapshot>;
+
+    if (
+      typeof parsed.x !== "number" ||
+      typeof parsed.y !== "number" ||
+      typeof parsed.vx !== "number" ||
+      typeof parsed.vy !== "number" ||
+      typeof parsed.grounded !== "boolean"
+    ) {
+      return null;
+    }
+
+    return {
+      x: parsed.x,
+      y: parsed.y,
+      vx: parsed.vx,
+      vy: parsed.vy,
+      grounded: parsed.grounded,
+      lastProcessedSequence:
+        typeof parsed.lastProcessedSequence === "number" ? parsed.lastProcessedSequence : 0,
+    } satisfies StoredCharacterSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredCharacterSnapshot(
+  sceneId: Id<"scenes">,
+  userId: string,
+  snapshot: StoredCharacterSnapshot
+) {
+  try {
+    window.localStorage.setItem(
+      getStoredCharacterSnapshotKey(sceneId, userId),
+      JSON.stringify(snapshot)
+    );
+  } catch {
+    // Ignore storage access failures.
+  }
 }
 
 function isJumpKey(key: string) {
@@ -117,26 +229,6 @@ function toCharacterState(character: SceneCharacter): CharacterState {
   };
 }
 
-function predictRemoteCharacter(
-  character: SceneCharacter,
-  now: number,
-  width: number,
-  height: number,
-  collisionSurfaces: ReturnType<typeof resolveCollisionSurfaces>
-) {
-  const elapsedSeconds =
-    Math.min(REMOTE_PREDICTION_WINDOW_MS, Math.max(0, now - character.updatedAt)) / 1000;
-
-  return resolveCharacterState({ width, height }, collisionSurfaces, toCharacterState(character), {
-    x: character.x + character.vx * elapsedSeconds,
-    y:
-      character.y + character.vy * elapsedSeconds + 0.5 * GRAVITY * elapsedSeconds * elapsedSeconds,
-    vx: character.vx,
-    vy: character.vy + GRAVITY * elapsedSeconds,
-    grounded: character.grounded,
-  });
-}
-
 function resolveCollisionSurfaces(assets: SceneAsset[]) {
   return assets
     .filter((asset) => asset.collision)
@@ -148,31 +240,48 @@ function resolveCollisionSurfaces(assets: SceneAsset[]) {
     }));
 }
 
+function toCharacterMovementAction(state: CharacterSyncState): CharacterMovementAction {
+  return {
+    kind: "movement",
+    x: state.x,
+    y: state.y,
+    vx: state.vx,
+    vy: state.vy,
+    grounded: state.grounded,
+    timeSinceBatchStart: state.timeSinceBatchStart,
+  };
+}
+
 function createOptimisticCharacter(
   current: SceneCharacter[] | undefined,
   sceneId: Id<"scenes">,
   sessionId: string,
   color: string,
-  clientSequence: number,
-  state: CharacterState
+  states: CharacterSyncState[]
 ): SceneCharacter {
   const existing = current?.find((character) => character.isCurrentUser);
+  const latestState = states[states.length - 1];
   const now = Date.now();
+
+  if (!latestState) {
+    throw new Error("Expected movement states for optimistic character");
+  }
 
   return {
     _id: existing?._id ?? (`optimistic-${sessionId}` as Id<"characters">),
     _creationTime: existing?._creationTime ?? now,
     sceneId,
     sessionId,
-    x: state.x,
-    y: state.y,
-    vx: state.vx,
-    vy: state.vy,
+    actions: states.map(toCharacterMovementAction),
+    x: latestState.x,
+    y: latestState.y,
+    vx: latestState.vx,
+    vy: latestState.vy,
     width: existing?.width ?? CHARACTER_WIDTH,
     height: existing?.height ?? CHARACTER_HEIGHT,
-    grounded: state.grounded,
+    grounded: latestState.grounded,
     color: existing?.color ?? color,
-    lastProcessedSequence: clientSequence,
+    lastProcessedSequence: latestState.clientSequence,
     updatedAt: now,
     isCurrentUser: true,
   };
@@ -186,6 +295,10 @@ function areCharacterStatesEqual(left: CharacterState, right: CharacterState) {
     left.vy === right.vy &&
     left.grounded === right.grounded
   );
+}
+
+function lerp(start: number, end: number, amount: number) {
+  return start + (end - start) * amount;
 }
 
 function SceneLoadingCard(props: { label: string }) {
@@ -223,6 +336,13 @@ function SceneAuthGate() {
 export default function SceneLanding() {
   const defaultScene = useQuery(api.scenes.getDefault, {});
   const convexAuth = useConvexClerkAuth();
+  const auth = useAuth();
+
+  createEffect(() => {
+    if (auth.isLoaded() && !auth.isSignedIn()) {
+      clearSceneSessionId();
+    }
+  });
 
   return (
     <main class="min-h-screen bg-[#140d0b] px-4 py-8 text-foreground">
@@ -314,15 +434,10 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const assets = useQuery(api.sceneAssets.listByScene, () => ({ sceneId: props.sceneId }), {
     keepPreviousData: true,
   });
-  const characters = useQuery(
-    api.characters.listByScene,
-    () => ({ sceneId: props.sceneId, sessionId }),
-    {
-      keepPreviousData: true,
-    }
-  );
+  const characters = useQuery(api.characters.listByScene, () => ({ sceneId: props.sceneId }), {
+    keepPreviousData: true,
+  });
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
-  const [frameNow, setFrameNow] = createSignal(Date.now());
   const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
@@ -337,19 +452,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
       (character) => !character.isCurrentUser
     )
   );
-  const remoteCharacters = createMemo(() =>
-    otherCharacters().map((character) => ({
-        ...character,
-        predicted: predictRemoteCharacter(
-          character,
-          frameNow(),
-          props.width,
-          props.height,
-          collisionSurfaces()
-        ),
-      }))
-  );
-  const hasRemoteCharacters = createMemo(() => otherCharacters().length > 0);
   const playerColor = createMemo(() => ownCharacter()?.color ?? fallbackPlayerColor());
 
   let activeLeft = false;
@@ -360,6 +462,20 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let lastPresenceSentAt = 0;
   let batchStartedAt = Date.now();
   let pendingSyncStates: CharacterSyncState[] = [];
+
+  createEffect(() => {
+    const currentUserId = userId();
+
+    if (!currentUserId) {
+      return;
+    }
+
+    const storedSnapshot = readStoredCharacterSnapshot(props.sceneId, currentUserId);
+
+    if (storedSnapshot) {
+      latestSequence = Math.max(latestSequence, storedSnapshot.lastProcessedSequence);
+    }
+  });
 
   createEffect(() => {
     const nextUserId = userId();
@@ -374,6 +490,10 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
     if (nextOwnCharacter?.color) {
       setFallbackPlayerColor(nextOwnCharacter.color);
+    }
+
+    if (nextOwnCharacter) {
+      latestSequence = Math.max(latestSequence, nextOwnCharacter.lastProcessedSequence);
     }
   });
 
@@ -392,6 +512,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
   createEffect(() => {
     const serverCharacter = ownCharacter();
+    const currentUserId = userId();
 
     if (playerState()) {
       return;
@@ -400,6 +521,15 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     if (serverCharacter) {
       setPlayerState(toCharacterState(serverCharacter));
       return;
+    }
+
+    if (currentUserId) {
+      const storedSnapshot = readStoredCharacterSnapshot(props.sceneId, currentUserId);
+
+      if (storedSnapshot) {
+        setPlayerState(storedSnapshot);
+        return;
+      }
     }
 
     if (assets.isLoading() || characters.isLoading()) {
@@ -418,6 +548,38 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
           }))
       )
     );
+  });
+
+  createEffect(() => {
+    const currentUserId = userId();
+    const serverCharacter = ownCharacter();
+
+    if (!currentUserId || !serverCharacter) {
+      return;
+    }
+
+    writeStoredCharacterSnapshot(props.sceneId, currentUserId, {
+      x: serverCharacter.x,
+      y: serverCharacter.y,
+      vx: serverCharacter.vx,
+      vy: serverCharacter.vy,
+      grounded: serverCharacter.grounded,
+      lastProcessedSequence: serverCharacter.lastProcessedSequence,
+    });
+  });
+
+  createEffect(() => {
+    const currentUserId = userId();
+    const currentState = playerState();
+
+    if (!currentUserId || !currentState) {
+      return;
+    }
+
+    writeStoredCharacterSnapshot(props.sceneId, currentUserId, {
+      ...currentState,
+      lastProcessedSequence: latestSequence,
+    });
   });
 
   createEffect(() => {
@@ -494,20 +656,18 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
           optimisticUpdate: (localStore) => {
             const current = localStore.getQuery(api.characters.listByScene, {
               sceneId: props.sceneId,
-              sessionId,
             }) as SceneCharacter[] | undefined;
             const optimisticCharacter = createOptimisticCharacter(
               current,
               props.sceneId,
               sessionId,
               playerColor(),
-              latestState.clientSequence,
-              latestState
+              states
             );
 
             localStore.setQuery(
               api.characters.listByScene,
-              { sceneId: props.sceneId, sessionId },
+              { sceneId: props.sceneId },
               [
                 ...(current ?? []).filter((character) => !character.isCurrentUser),
                 optimisticCharacter,
@@ -567,11 +727,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   createGameLoop({
     fn: (_timestamp, deltaSeconds) => {
       const now = Date.now();
-
-      if (hasRemoteCharacters()) {
-        setFrameNow(now);
-      }
-
       const currentState = playerState();
 
       if (!currentState || deltaSeconds <= 0) {
@@ -663,15 +818,17 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
           </For>
         </Show>
 
-        <For each={remoteCharacters()}>
+        <For each={otherCharacters()}>
           {(character, index) => (
-            <CharacterBody
+            <RemoteCharacterBody
               label={`P${index() + 1}`}
               color={character.color}
-              x={character.predicted.x}
-              y={character.predicted.y}
+              x={character.x}
+              y={character.y}
               width={character.width}
               height={character.height}
+              actions={character.actions}
+              lastProcessedSequence={character.lastProcessedSequence}
             />
           )}
         </For>
@@ -688,6 +845,165 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
             />
           )}
         </Show>
+      </div>
+    </div>
+  );
+}
+
+function RemoteCharacterBody(props: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  label: string;
+  actions: CharacterMovementAction[];
+  lastProcessedSequence: number;
+}) {
+  let rootRef: HTMLDivElement | undefined;
+  let lastQueuedSequence: number | null = null;
+  let activeBatch: CharacterMovementAction[] | null = null;
+  let activeBatchIndex = -1;
+  let activeBatchStartedAt = 0;
+  let activeBatchStartX = props.x;
+  let activeBatchStartY = props.y;
+  const pendingBatches: CharacterMovementAction[][] = [];
+  let renderedX = props.x;
+  let renderedY = props.y;
+
+  const setPosition = (x: number, y: number) => {
+    renderedX = x;
+    renderedY = y;
+    rootRef?.style.setProperty("transform", `translate3d(${x}px, ${y}px, 0)`);
+  };
+
+  const startNextBatch = (timestamp: number) => {
+    const nextBatch = pendingBatches.shift();
+
+    if (!nextBatch) {
+      activeBatch = null;
+      activeBatchIndex = -1;
+      return;
+    }
+
+    activeBatch = nextBatch;
+    activeBatchIndex = -1;
+    activeBatchStartedAt = timestamp;
+    activeBatchStartX = renderedX;
+    activeBatchStartY = renderedY;
+  };
+
+  createEffect(() => {
+    const currentSequence = props.lastProcessedSequence;
+
+    if (lastQueuedSequence === null) {
+      lastQueuedSequence = currentSequence;
+      setPosition(props.x, props.y);
+      return;
+    }
+
+    if (currentSequence <= lastQueuedSequence) {
+      return;
+    }
+
+    lastQueuedSequence = currentSequence;
+
+    if (props.actions.length === 0) {
+      setPosition(props.x, props.y);
+      return;
+    }
+
+    pendingBatches.push(props.actions.map((action) => ({ ...action })));
+  });
+
+  createGameLoop({
+    fn: (timestamp) => {
+      if (!rootRef) {
+        return;
+      }
+
+      if (!activeBatch) {
+        if (pendingBatches.length === 0) {
+          return;
+        }
+
+        startNextBatch(timestamp);
+      }
+
+      const batch = activeBatch;
+
+      if (!batch) {
+        return;
+      }
+
+      if (batch.length === 0) {
+        activeBatch = null;
+        activeBatchIndex = -1;
+        return;
+      }
+
+      const elapsed = Math.max(0, timestamp - activeBatchStartedAt);
+      const lastAction = batch[batch.length - 1];
+
+      while (
+        activeBatch &&
+        activeBatchIndex + 1 < activeBatch.length &&
+        activeBatch[activeBatchIndex + 1].timeSinceBatchStart <= elapsed
+      ) {
+        activeBatchIndex += 1;
+      }
+
+      if (elapsed >= lastAction.timeSinceBatchStart) {
+        setPosition(lastAction.x, lastAction.y);
+        activeBatch = null;
+        activeBatchIndex = -1;
+        return;
+      }
+
+      const previousAction = activeBatchIndex >= 0 ? batch[activeBatchIndex] : null;
+      const nextAction = batch[activeBatchIndex + 1];
+
+      if (!nextAction) {
+        activeBatch = null;
+        activeBatchIndex = -1;
+        return;
+      }
+
+      const startTime = previousAction?.timeSinceBatchStart ?? 0;
+      const endTime = nextAction.timeSinceBatchStart;
+      const duration = Math.max(1, endTime - startTime);
+      const amount = Math.min(1, Math.max(0, (elapsed - startTime) / duration));
+      const startX = previousAction?.x ?? activeBatchStartX;
+      const startY = previousAction?.y ?? activeBatchStartY;
+
+      setPosition(lerp(startX, nextAction.x, amount), lerp(startY, nextAction.y, amount));
+    },
+  });
+
+  return (
+    <div
+      ref={rootRef}
+      class="pointer-events-none absolute"
+      style={{
+        left: "0",
+        top: "0",
+        width: `${props.width}px`,
+        height: `${props.height}px`,
+        transform: `translate3d(${props.x}px, ${props.y}px, 0)`,
+        "will-change": "transform",
+        "z-index": 40,
+      }}
+    >
+      <div
+        class="absolute inset-0 rounded-[14px] border border-black/30 shadow-[0_10px_30px_rgba(0,0,0,0.28)]"
+        style={{
+          background: `linear-gradient(180deg, ${props.color}, color-mix(in srgb, ${props.color} 70%, #0f0907))`,
+        }}
+      />
+      <div class="absolute inset-x-0 -top-6 flex justify-center">
+        <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
+          {props.label}
+        </div>
       </div>
     </div>
   );

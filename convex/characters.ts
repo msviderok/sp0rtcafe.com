@@ -10,6 +10,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 
 const ACTIVE_CHARACTER_WINDOW_MS = 15_000;
+const MAX_STORED_MOVEMENT_ACTIONS = 200;
+
 const characterSyncStateValidator = v.object({
   clientSequence: v.number(),
   x: v.number(),
@@ -30,6 +32,16 @@ type CharacterSyncState = {
   timeSinceBatchStart?: number;
 };
 
+type CharacterMovementAction = {
+  kind: "movement";
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  grounded: boolean;
+  timeSinceBatchStart: number;
+};
+
 type CharacterSyncBatchArgs = {
   sceneId: Id<"scenes">;
   sessionId: string;
@@ -47,16 +59,43 @@ function getCollisionSurfaces(sceneAssets: Doc<"sceneAssets">[]) {
     }));
 }
 
-function toPublicCharacter(
-  character: Doc<"characters">,
-  currentSessionId: string | null,
-) {
-  const colorKey = character.tokenIdentifier ?? character.sessionId;
+function sortCharactersByRecency(characters: Doc<"characters">[]) {
+  return [...characters].sort((left, right) => {
+    if (left.updatedAt !== right.updatedAt) {
+      return right.updatedAt - left.updatedAt;
+    }
 
+    return right._creationTime - left._creationTime;
+  });
+}
+
+function dedupeCharactersByUser(characters: Doc<"characters">[]) {
+  const latestByUser = new Map<string, Doc<"characters">>();
+
+  for (const character of sortCharactersByRecency(characters)) {
+    if (!character.tokenIdentifier) {
+      continue;
+    }
+
+    if (!latestByUser.has(character.tokenIdentifier)) {
+      latestByUser.set(character.tokenIdentifier, character);
+    }
+  }
+
+  return [...latestByUser.values()];
+}
+
+function getLatestCharacter(characters: Doc<"characters">[]) {
+  return sortCharactersByRecency(characters)[0] ?? null;
+}
+
+function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier: string | null) {
   return {
     _id: character._id,
     _creationTime: character._creationTime,
     sceneId: character.sceneId,
+    sessionId: character.sessionId,
+    actions: character.actions ?? [],
     x: character.x,
     y: character.y,
     vx: character.vx,
@@ -64,10 +103,11 @@ function toPublicCharacter(
     width: character.width || CHARACTER_WIDTH,
     height: character.height || CHARACTER_HEIGHT,
     grounded: character.grounded ?? false,
-    color: character.color || getCharacterColor(colorKey),
+    color: character.color || getCharacterColor(character.tokenIdentifier ?? character.sessionId),
     lastProcessedSequence: character.lastProcessedSequence,
     updatedAt: character.updatedAt,
-    isCurrentUser: currentSessionId !== null && character.sessionId === currentSessionId,
+    isCurrentUser:
+      currentTokenIdentifier !== null && character.tokenIdentifier === currentTokenIdentifier,
   };
 }
 
@@ -78,29 +118,20 @@ function getIdentityColorSeed(identity: {
   return identity.subject ?? identity.tokenIdentifier;
 }
 
-async function syncCharacterStates(
-  ctx: MutationCtx,
-  args: CharacterSyncBatchArgs,
-) {
+async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArgs) {
   const identity = await ctx.auth.getUserIdentity();
 
   if (!identity) {
     throw new Error("Not authenticated");
   }
 
-  const colorSeed = getIdentityColorSeed(identity);
-
-  const existing = await ctx.db
+  const existingCharacters = await ctx.db
     .query("characters")
-    .withIndex("by_sceneId_and_sessionId", (q) =>
-      q.eq("sceneId", args.sceneId).eq("sessionId", args.sessionId),
+    .withIndex("by_sceneId_and_tokenIdentifier", (q) =>
+      q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier),
     )
-    .unique();
-
-  if (existing?.tokenIdentifier && existing.tokenIdentifier !== identity.tokenIdentifier) {
-    throw new Error("Unauthorized");
-  }
-
+    .take(10);
+  const existing = getLatestCharacter(existingCharacters);
   const sortedStates = [...args.states].sort((left, right) => {
     if (left.clientSequence !== right.clientSequence) {
       return left.clientSequence - right.clientSequence;
@@ -114,7 +145,7 @@ async function syncCharacterStates(
       throw new Error("No character state provided");
     }
 
-    return toPublicCharacter(existing, args.sessionId);
+    return toPublicCharacter(existing, identity.tokenIdentifier);
   }
 
   const scene = await ctx.db.get(args.sceneId);
@@ -134,32 +165,36 @@ async function syncCharacterStates(
     .take(100);
   const collisionSurfaces = getCollisionSurfaces(sceneAssets);
   const now = Date.now();
-  const activeSceneCharacters = sceneCharacters.filter(
+  const activeSceneCharacters = dedupeCharactersByUser(sceneCharacters).filter(
     (character) =>
-      character._id !== existing?._id && now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS,
+      character.tokenIdentifier &&
+      character.tokenIdentifier !== identity.tokenIdentifier &&
+      now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS,
   );
-  const initialState = getSpawnState(
-    { width: scene.width, height: scene.height },
-    collisionSurfaces,
-    activeSceneCharacters.map((character) => ({
-      x: character.x,
-      y: character.y,
-    })),
-  );
+  const initialState =
+    existing === null
+      ? getSpawnState(
+          { width: scene.width, height: scene.height },
+          collisionSurfaces,
+          activeSceneCharacters.map((character) => ({
+            x: character.x,
+            y: character.y,
+          })),
+        )
+      : {
+          x: existing.x,
+          y: existing.y,
+          vx: existing.vx,
+          vy: existing.vy,
+          grounded: existing.grounded,
+        };
 
-  let nextState = {
-    x: existing?.x ?? initialState.x,
-    y: existing?.y ?? initialState.y,
-    vx: existing?.vx ?? 0,
-    vy: existing?.vy ?? 0,
-    grounded: existing?.grounded ?? initialState.grounded,
-  };
+  let nextState = initialState;
   let lastProcessedSequence = existing?.lastProcessedSequence ?? -1;
-  let hasAcceptedState = false;
-  let isInitialSpawn = !existing;
+  const acceptedActions: CharacterMovementAction[] = [];
 
   for (const state of sortedStates) {
-    if (state.clientSequence < lastProcessedSequence) {
+    if (state.clientSequence <= lastProcessedSequence) {
       continue;
     }
 
@@ -167,47 +202,47 @@ async function syncCharacterStates(
       { width: scene.width, height: scene.height },
       collisionSurfaces,
       nextState,
-      isInitialSpawn
-        ? {
-            x: initialState.x,
-            y: initialState.y,
-            vx: 0,
-            vy: 0,
-            grounded: initialState.grounded,
-          }
-        : {
-            x: state.x,
-            y: state.y,
-            vx: state.vx,
-            vy: state.vy,
-            grounded: state.grounded,
-          },
+      {
+        x: state.x,
+        y: state.y,
+        vx: state.vx,
+        vy: state.vy,
+        grounded: state.grounded,
+      },
     );
     lastProcessedSequence = state.clientSequence;
-    hasAcceptedState = true;
-    isInitialSpawn = false;
+    acceptedActions.push({
+      kind: "movement",
+      x: nextState.x,
+      y: nextState.y,
+      vx: nextState.vx,
+      vy: nextState.vy,
+      grounded: nextState.grounded,
+      timeSinceBatchStart: Math.max(0, state.timeSinceBatchStart ?? 0),
+    });
   }
 
-  if (!hasAcceptedState) {
+  if (acceptedActions.length === 0) {
     if (!existing) {
       throw new Error("No new character state provided");
     }
 
-    return toPublicCharacter(existing, args.sessionId);
+    return toPublicCharacter(existing, identity.tokenIdentifier);
   }
 
   const patch = {
     sceneId: args.sceneId,
     sessionId: args.sessionId,
     tokenIdentifier: identity.tokenIdentifier,
+    actions: acceptedActions.slice(-MAX_STORED_MOVEMENT_ACTIONS),
     x: nextState.x,
     y: nextState.y,
     vx: nextState.vx,
     vy: nextState.vy,
-    width: CHARACTER_WIDTH,
-    height: CHARACTER_HEIGHT,
+    width: existing?.width ?? CHARACTER_WIDTH,
+    height: existing?.height ?? CHARACTER_HEIGHT,
     grounded: nextState.grounded,
-    color: existing?.color ?? getCharacterColor(colorSeed),
+    color: existing?.color ?? getCharacterColor(getIdentityColorSeed(identity)),
     lastProcessedSequence,
     updatedAt: now,
   };
@@ -219,7 +254,7 @@ async function syncCharacterStates(
         ...existing,
         ...patch,
       },
-      args.sessionId,
+      identity.tokenIdentifier,
     );
   }
 
@@ -230,16 +265,16 @@ async function syncCharacterStates(
       _creationTime: now,
       ...patch,
     },
-    args.sessionId,
+    identity.tokenIdentifier,
   );
 }
 
 export const listByScene = query({
   args: {
     sceneId: v.id("scenes"),
-    sessionId: v.string(),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
     const now = Date.now();
     const characters = await ctx.db
       .query("characters")
@@ -247,9 +282,14 @@ export const listByScene = query({
       .order("desc")
       .take(100);
 
-    return characters
-      .filter((character) => now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS)
-      .map((character) => toPublicCharacter(character, args.sessionId))
+    return dedupeCharactersByUser(
+      characters.filter(
+        (character) =>
+          Boolean(character.tokenIdentifier) &&
+          now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS,
+      ),
+    )
+      .map((character) => toPublicCharacter(character, identity?.tokenIdentifier ?? null))
       .sort((left, right) => left._creationTime - right._creationTime);
   },
 });
@@ -277,6 +317,7 @@ export const sync = mutation({
           vx: args.vx,
           vy: args.vy,
           grounded: args.grounded,
+          timeSinceBatchStart: 0,
         },
       ],
     });
