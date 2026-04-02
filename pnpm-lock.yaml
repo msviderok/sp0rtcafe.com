@@ -62,6 +62,9 @@ importers:
       solid-phosphor:
         specifier: ^1.0.16
         version: 1.0.16(solid-js@1.9.12)
+      srvx:
+        specifier: ^0.11.14
+        version: 0.11.14
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -3747,6 +3750,11 @@ packages:
 
   sqids@0.3.0:
     resolution: {integrity: sha512-lOQK1ucVg+W6n3FhRwwSeUijxe93b51Bfz5PMRMihVf1iVkl82ePQG7V5vwrhzB11v0NtsR25PSZRGiSomJaJw==}
+
+  srvx@0.11.14:
+    resolution: {integrity: sha512-mx+pKrWJCzo5m6uXqyB7n4VA81mpdFRroSWsVTQTYqCZE65hFJ+jtVIeyhtL2/kvtDMrHdbA0hWEUh/vu0+Viw==}
+    engines: {node: '>=20.16.0'}
+    hasBin: true
 
   srvx@0.9.8:
     resolution: {integrity: sha512-RZaxTKJEE/14HYn8COLuUOJAt0U55N9l1Xf6jj+T0GoA01EUH1Xz5JtSUOI+EHn+AEgPCVn7gk6jHJffrr06fQ==}
@@ -7835,6 +7843,8 @@ snapshots:
   space-separated-tokens@2.0.2: {}
 
   sqids@0.3.0: {}
+
+  srvx@0.11.14: {}
 
   srvx@0.9.8: {}
 
