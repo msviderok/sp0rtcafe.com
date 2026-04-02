@@ -8,6 +8,7 @@ import {
 } from "../src/lib/characterPhysics";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
+import { getUserProfileByEmail } from "./userProfiles";
 
 const ACTIVE_CHARACTER_WINDOW_MS = 15_000;
 const MAX_STORED_MOVEMENT_ACTIONS = 200;
@@ -95,6 +96,8 @@ function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier:
     _creationTime: character._creationTime,
     sceneId: character.sceneId,
     sessionId: character.sessionId,
+    nickname: character.nickname ?? null,
+    profileOptions: character.profileOptions ?? {},
     actions: character.actions ?? [],
     x: character.x,
     y: character.y,
@@ -116,6 +119,22 @@ function getIdentityColorSeed(identity: {
   tokenIdentifier: string;
 }) {
   return identity.subject ?? identity.tokenIdentifier;
+}
+
+function resolveCharacterColor(
+  existing: Doc<"characters"> | null,
+  profile: Doc<"userProfiles"> | null,
+  identity: {
+    subject?: string | null;
+    tokenIdentifier: string;
+  },
+) {
+  return (
+    profile?.options?.color ??
+    existing?.profileOptions?.color ??
+    existing?.color ??
+    getCharacterColor(getIdentityColorSeed(identity))
+  );
 }
 
 async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArgs) {
@@ -153,6 +172,8 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
   if (!scene) {
     throw new Error("Scene not found");
   }
+
+  const profile = await getUserProfileByEmail(ctx, identity.email);
 
   const sceneAssets = await ctx.db
     .query("sceneAssets")
@@ -234,6 +255,8 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     sceneId: args.sceneId,
     sessionId: args.sessionId,
     tokenIdentifier: identity.tokenIdentifier,
+    nickname: profile?.nickname,
+    profileOptions: profile?.options,
     actions: acceptedActions.slice(-MAX_STORED_MOVEMENT_ACTIONS),
     x: nextState.x,
     y: nextState.y,
@@ -242,7 +265,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     width: existing?.width ?? CHARACTER_WIDTH,
     height: existing?.height ?? CHARACTER_HEIGHT,
     grounded: nextState.grounded,
-    color: existing?.color ?? getCharacterColor(getIdentityColorSeed(identity)),
+    color: resolveCharacterColor(existing, profile, identity),
     lastProcessedSequence,
     updatedAt: now,
   };

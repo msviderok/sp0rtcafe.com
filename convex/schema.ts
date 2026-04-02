@@ -1,6 +1,11 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const userProfileOptionsValidator = v.object({
+  color: v.optional(v.string()),
+  characterSprite: v.optional(v.string()),
+});
+
 export default defineSchema({
   files: defineTable({
     uploadThingKey: v.string(),
@@ -68,6 +73,8 @@ export default defineSchema({
     sceneId: v.id("scenes"),
     sessionId: v.string(),
     tokenIdentifier: v.optional(v.string()),
+    nickname: v.optional(v.string()),
+    profileOptions: v.optional(userProfileOptionsValidator),
     actions: v.optional(
       v.array(
         v.object({
@@ -95,4 +102,12 @@ export default defineSchema({
     .index("by_sceneId", ["sceneId"])
     .index("by_sceneId_and_tokenIdentifier", ["sceneId", "tokenIdentifier"])
     .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
+
+  userProfiles: defineTable({
+    email: v.string(),
+    normalizedEmail: v.string(),
+    nickname: v.string(),
+    options: v.optional(userProfileOptionsValidator),
+    updatedAt: v.number(),
+  }).index("by_normalizedEmail", ["normalizedEmail"]),
 });

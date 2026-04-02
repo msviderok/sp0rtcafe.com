@@ -13,6 +13,7 @@ import type * as files from "../files.js";
 import type * as sceneAssets from "../sceneAssets.js";
 import type * as scenes from "../scenes.js";
 import type * as sprites from "../sprites.js";
+import type * as userProfiles from "../userProfiles.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   sceneAssets: typeof sceneAssets;
   scenes: typeof scenes;
   sprites: typeof sprites;
+  userProfiles: typeof userProfiles;
 }>;
 
 /**
