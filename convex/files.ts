@@ -272,6 +272,22 @@ export const syncUploadedImagesToSprites = mutation({
   },
 });
 
+export const listAudio = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminAccess(ctx);
+    const files = await ctx.db
+      .query("files")
+      .withIndex("by_status", (q) => q.eq("status", "uploaded"))
+      .take(500);
+    return files.filter(
+      (f) =>
+        f.mimeType?.startsWith("audio/") ||
+        /\.(mp3|ogg|wav|aac)$/i.test(f.fileName),
+    );
+  },
+});
+
 export const listRecent = query({
   args: {},
   handler: async (ctx) => {

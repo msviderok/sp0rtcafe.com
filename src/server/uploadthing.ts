@@ -47,6 +47,38 @@ export const uploadRouter = {
 			// !!! Whatever is returned here is sent to the clientside `onClientUploadComplete` callback
 			return { uploaded: true };
 		}),
+	audioUploader: f({
+		audio: {
+			maxFileSize: '32MB',
+			maxFileCount: 5,
+		},
+	})
+		.middleware(async () => {
+			return { authorized: true };
+		})
+		.onUploadComplete(async ({ file }) => {
+			console.log('audio file url', file.ufsUrl);
+
+			if (convex) {
+				await convex.mutation(api.files.upsertUploadThingFiles, {
+					files: [
+						{
+							uploadThingKey: file.key,
+							fileName: file.name,
+							url: file.ufsUrl,
+							size: file.size,
+							mimeType: file.type,
+							uploadedAt: Date.now(),
+							status: 'uploaded',
+							progress: 100,
+						},
+					],
+					createSprites: false,
+				});
+			}
+
+			return { uploaded: true };
+		}),
 } satisfies FileRouter;
 
 export type UploadRouter = typeof uploadRouter;

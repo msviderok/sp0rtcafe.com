@@ -168,6 +168,11 @@ body {
   }
 }
 
+@keyframes spin-asset {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* Collapsible panel animation */
 .collapsible-animated {
   overflow: hidden;

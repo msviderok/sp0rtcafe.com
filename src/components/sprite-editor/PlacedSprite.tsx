@@ -50,6 +50,8 @@ export default function PlacedSprite(props: {
   rotation: number;
   locked: boolean;
   collision: boolean;
+  isCurrentlyPlaying?: boolean;
+  isNextTrack?: boolean;
   canResizeFreely: boolean;
   selectionMode: "none" | "single" | "multi";
   actionsDisabled?: boolean;
@@ -62,6 +64,8 @@ export default function PlacedSprite(props: {
   onDelete: () => void;
   onToggleLock: () => void;
   onToggleCollision: () => void;
+  onToggleCurrentlyPlaying: () => void;
+  onToggleNextTrack: () => void;
   onToggleStyleEditor: () => void;
 }) {
   const cornerHandleClass =
@@ -161,6 +165,42 @@ export default function PlacedSprite(props: {
             >
               <IconCollision />
               {props.collision ? "Collision" : "No collision"}
+            </button>
+
+            <div class="mx-0.5 h-3.5 w-px bg-white/10" />
+
+            <button
+              class={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.isCurrentlyPlaying
+                  ? "border-sky-400/18 bg-sky-500/15 text-sky-200"
+                  : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
+              )}
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleCurrentlyPlaying();
+              }}
+            >
+              {props.isCurrentlyPlaying ? "Now playing" : "Now playing"}
+            </button>
+
+            <button
+              class={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.isNextTrack
+                  ? "border-violet-400/18 bg-violet-500/15 text-violet-200"
+                  : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
+              )}
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleNextTrack();
+              }}
+            >
+              {props.isNextTrack ? "Up next" : "Up next"}
             </button>
 
             <div class="mx-0.5 h-3.5 w-px bg-white/10" />

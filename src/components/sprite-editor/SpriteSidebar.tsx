@@ -92,11 +92,20 @@ export default function SpriteSidebar(props: {
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
 	const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
 	const activeUploads = useQuery(api.files.listActiveUploads, {});
+	const audioFiles = useQuery(api.files.listAudio, {});
+	const radioState = useQuery(api.radio.getStateWithFiles, {});
+	const setRadioTrack = useMutation(api.radio.setTrack);
+	const pauseRadio = useMutation(api.radio.pause);
+	const resumeRadio = useMutation(api.radio.resume);
 	const [errorMessage, setErrorMessage] = createSignal<string>();
+	const [audioErrorMessage, setAudioErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
+	const [isUploadingAudio, setIsUploadingAudio] = createSignal(false);
 	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
+	const [isAudioSectionOpen, setIsAudioSectionOpen] = createSignal(false);
 	let fileInputRef: HTMLInputElement | undefined;
+	let audioFileInputRef: HTMLInputElement | undefined;
 
 	const sortedSprites = createMemo(() =>
 		[...(sprites.data() ?? [])].sort((left, right) => left.key.localeCompare(right.key)),
@@ -298,6 +307,80 @@ export default function SpriteSidebar(props: {
 			setErrorMessage('upload fail');
 		} finally {
 			setIsUploading(false);
+			input.value = '';
+		}
+	};
+
+	const handleAudioFileSelection = async (event: Event) => {
+		const input = event.currentTarget as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+
+		if (files.length === 0) {
+			return;
+		}
+
+		const audioFilesSelected = files.filter(
+			(file) => file.type.startsWith('audio/') || /\.(mp3|ogg|wav|aac)$/i.test(file.name),
+		);
+		if (audioFilesSelected.length !== files.length) {
+			setAudioErrorMessage('audio files only');
+			input.value = '';
+			return;
+		}
+
+		setAudioErrorMessage(undefined);
+		setIsUploadingAudio(true);
+
+		try {
+			await uploadThing.uploadFiles('audioUploader', {
+				files: audioFilesSelected,
+				onEvent: (uploadEvent) => {
+					if (uploadEvent.type === 'presigned-received') {
+						void syncUploadBatch(
+							uploadEvent.files
+								.filter((file) => file.key)
+								.map((file) => ({
+									uploadThingKey: file.key!,
+									fileName: file.name,
+									status: 'pending' as const,
+									progress: 0,
+									size: file.size,
+									mimeType: file.type || undefined,
+								})),
+						);
+					} else if (uploadEvent.type === 'upload-completed') {
+						void syncUploadBatch([
+							{
+								uploadThingKey: uploadEvent.file.key,
+								fileName: uploadEvent.file.name,
+								status: 'uploaded',
+								progress: 100,
+								url: uploadEvent.file.url,
+								size: uploadEvent.file.size,
+								mimeType: uploadEvent.file.type || undefined,
+								uploadedAt: Date.now(),
+							},
+						]);
+					} else if (uploadEvent.type === 'upload-failed') {
+						void syncUploadBatch([
+							{
+								uploadThingKey: uploadEvent.file.key,
+								fileName: uploadEvent.file.name,
+								status: 'failed',
+								progress: 0,
+								size: uploadEvent.file.size,
+								mimeType: uploadEvent.file.type || undefined,
+								error: uploadEvent.file.reason.message,
+							},
+						]);
+						setAudioErrorMessage('upload fail');
+					}
+				},
+			});
+		} catch {
+			setAudioErrorMessage('upload fail');
+		} finally {
+			setIsUploadingAudio(false);
 			input.value = '';
 		}
 	};
@@ -545,6 +628,143 @@ export default function SpriteSidebar(props: {
 																`${file.progress}%`
 															)}
 														</div>
+													</div>
+												</div>
+											)}
+										</For>
+									</div>
+								</Show>
+							</div>
+						</Show>
+					</section>
+
+					<section class="overflow-hidden">
+						<button
+							class="flex w-full items-center justify-between px-4 py-3 text-left"
+							type="button"
+							onClick={() => setIsAudioSectionOpen((current) => !current)}
+						>
+							<span class="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Audio / Radio</span>
+							<svg
+								class={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isAudioSectionOpen() ? 'rotate-180' : ''}`}
+								viewBox="0 0 16 16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M4 6l4 4 4-4" />
+							</svg>
+						</button>
+						<Show when={isAudioSectionOpen()}>
+							<div class="border-t border-border p-2">
+								<input
+									ref={audioFileInputRef}
+									class="hidden"
+									type="file"
+									accept="audio/*"
+									multiple
+									onChange={handleAudioFileSelection}
+								/>
+								<button
+									class="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 text-xs text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
+									type="button"
+									title={isUploadingAudio() ? 'Uploading...' : 'Upload audio files'}
+									disabled={isUploadingAudio()}
+									onClick={() => audioFileInputRef?.click()}
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="14"
+										height="14"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										aria-hidden="true"
+									>
+										<path d="M12 5v14" />
+										<path d="M5 12h14" />
+									</svg>
+									{isUploadingAudio() ? 'Uploading...' : 'Upload audio'}
+								</button>
+								<Show when={audioErrorMessage()}>
+									<div class="mb-2 text-[10px] leading-tight text-destructive">{audioErrorMessage()}</div>
+								</Show>
+
+								<div class="mt-2 grid gap-2">
+									<div class="text-[10px] uppercase tracking-widest text-muted-foreground">Radio controls</div>
+
+									<Show when={radioState.data()?.currentTrackName}>
+										<div class="truncate text-xs text-foreground/70">
+											Playing: {radioState.data()?.currentTrackName}
+										</div>
+									</Show>
+
+									<button
+										class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+										type="button"
+										onClick={() => {
+											if (radioState.data()?.isPaused) {
+												void resumeRadio.mutate({});
+											} else {
+												void pauseRadio.mutate({});
+											}
+										}}
+									>
+										{radioState.data()?.isPaused ? 'Resume' : 'Pause'}
+									</button>
+
+									<label class="text-[10px] text-muted-foreground">
+										Current track
+										<select
+											class="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+											value={radioState.data()?.currentTrackFileId ?? ''}
+											onChange={(e) => {
+												const val = e.currentTarget.value;
+												void setRadioTrack.mutate({
+													slot: 'current',
+													fileId: val ? (val as Id<'files'>) : undefined,
+												});
+											}}
+										>
+											<option value="">None</option>
+											<For each={audioFiles.data() ?? []}>
+												{(file) => <option value={file._id}>{file.fileName}</option>}
+											</For>
+										</select>
+									</label>
+
+									<label class="text-[10px] text-muted-foreground">
+										Next track
+										<select
+											class="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+											value={radioState.data()?.nextTrackFileId ?? ''}
+											onChange={(e) => {
+												const val = e.currentTarget.value;
+												void setRadioTrack.mutate({
+													slot: 'next',
+													fileId: val ? (val as Id<'files'>) : undefined,
+												});
+											}}
+										>
+											<option value="">None</option>
+											<For each={audioFiles.data() ?? []}>
+												{(file) => <option value={file._id}>{file.fileName}</option>}
+											</For>
+										</select>
+									</label>
+								</div>
+
+								<Show when={(audioFiles.data() ?? []).length > 0}>
+									<div class="mt-3 flex flex-col gap-0.5">
+										<div class="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Audio files</div>
+										<For each={audioFiles.data() ?? []}>
+											{(file) => (
+												<div class="flex items-center gap-2 rounded-lg bg-muted/50 p-1.5">
+													<div class="min-w-0 flex-1">
+														<div class="truncate text-[11px] leading-tight text-foreground/50">{file.fileName}</div>
 													</div>
 												</div>
 											)}

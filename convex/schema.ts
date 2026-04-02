@@ -7,6 +7,16 @@ const userProfileOptionsValidator = v.object({
 });
 
 export default defineSchema({
+  radioState: defineTable({
+    currentTrackFileId: v.optional(v.id("files")),
+    nextTrackFileId: v.optional(v.id("files")),
+    startedAt: v.optional(v.number()),
+    pausePosition: v.optional(v.number()),
+    isPaused: v.boolean(),
+    updatedAt: v.number(),
+  }),
+
+
   files: defineTable({
     uploadThingKey: v.string(),
     fileName: v.string(),
@@ -67,6 +77,9 @@ export default defineSchema({
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
+    isCurrentlyPlaying: v.optional(v.boolean()),
+    isNextTrack: v.optional(v.boolean()),
+    animRotationSpeed: v.optional(v.number()),
   }).index("by_sceneId", ["sceneId"]),
 
   characters: defineTable({

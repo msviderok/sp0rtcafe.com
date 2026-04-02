@@ -1,5 +1,5 @@
 import { SignInButton, useAuth, UserButton } from "clerk-solidjs";
-import { useConvexClient, useQuery } from "convex-solidjs";
+import { useConvexClient, useMutation, useQuery } from "convex-solidjs";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -54,6 +54,7 @@ type CharacterMovementAction = {
 };
 
 type SceneAsset = {
+  _id: Id<"sceneAssets">;
   x: number;
   y: number;
   width: number;
@@ -64,6 +65,9 @@ type SceneAsset = {
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
+  isCurrentlyPlaying?: boolean;
+  isNextTrack?: boolean;
+  animRotationSpeed?: number;
   sprite: {
     url: string;
     bgRepeat?: string;
@@ -505,6 +509,15 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const characters = useQuery(api.characters.listByScene, () => ({ sceneId: props.sceneId }), {
     keepPreviousData: true,
   });
+  const radioState = useQuery(api.radio.getStateWithFiles, {});
+  const currentAccess = useQuery(api.admin.getCurrentAccess, {});
+  const audioFiles = useQuery(
+    api.files.listAudio,
+    () => (currentAccess.data()?.isAdmin ? {} : "skip"),
+  );
+  const setRadioTrack = useMutation(api.radio.setTrack);
+  const pauseRadio = useMutation(api.radio.pause);
+  const resumeRadio = useMutation(api.radio.resume);
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
   const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
   const [cameraX, setCameraX] = createSignal(0);
@@ -1142,7 +1155,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
               </div>
             }
           >
-            <For each={assets.data() ?? []}>
+            <For each={(assets.data() ?? []) as SceneAsset[]}>
               {(asset) => (
                 <div
                   class="absolute [image-rendering:pixelated]"
@@ -1151,7 +1164,14 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
                     top: `${asset.y}px`,
                     width: `${asset.width}px`,
                     height: `${asset.height}px`,
-                    transform: `rotate(${asset.rotation ?? 0}deg)`,
+                    transform: asset.animRotationSpeed
+                      ? undefined
+                      : `rotate(${asset.rotation ?? 0}deg)`,
+                    animation: asset.animRotationSpeed
+                      ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
+                      : undefined,
+                    "animation-direction":
+                      (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
                     "transform-origin": "center center",
                   }}
                 >
@@ -1167,6 +1187,16 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
                       opacity: String(asset.opacity ?? 1),
                     }}
                   />
+                  <Show when={asset.isCurrentlyPlaying}>
+                    <CurrentlyPlayingOverlay
+                      trackName={radioState.data()?.currentTrackName}
+                    />
+                  </Show>
+                  <Show when={asset.isNextTrack}>
+                    <NextTrackOverlay
+                      trackName={radioState.data()?.nextTrackName}
+                    />
+                  </Show>
                 </div>
               )}
             </For>
@@ -1200,6 +1230,187 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
             )}
           </Show>
         </div>
+      </div>
+
+      <RadioPlayer radioState={radioState.data() ?? null} />
+
+      <Show when={currentAccess.data()?.isAdmin}>
+        <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[4px] border border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm">
+          <div class="text-[10px] uppercase tracking-[0.18em] text-white/40">Radio</div>
+
+          <Show when={radioState.data()?.currentTrackName}>
+            <div class="truncate text-xs text-white/70">
+              {radioState.data()?.currentTrackName}
+            </div>
+          </Show>
+
+          <div class="flex items-center gap-1.5">
+            <button
+              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+              type="button"
+              onClick={() => {
+                if (radioState.data()?.isPaused) {
+                  void resumeRadio.mutate({});
+                } else {
+                  void pauseRadio.mutate({});
+                }
+              }}
+            >
+              {radioState.data()?.isPaused ? "Resume" : "Pause"}
+            </button>
+          </div>
+
+          <div class="mx-1 h-4 w-px bg-white/10" />
+
+          <label class="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-white/40">
+            Current
+            <select
+              class="h-7 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-white outline-none"
+              value={radioState.data()?.currentTrackFileId ?? ""}
+              onChange={(e) => {
+                const val = e.currentTarget.value;
+                void setRadioTrack.mutate({
+                  slot: "current",
+                  fileId: val ? (val as Id<"files">) : undefined,
+                });
+              }}
+            >
+              <option value="">None</option>
+              <For each={audioFiles.data() ?? []}>
+                {(file) => (
+                  <option value={file._id}>{file.fileName}</option>
+                )}
+              </For>
+            </select>
+          </label>
+
+          <label class="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-white/40">
+            Next
+            <select
+              class="h-7 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-white outline-none"
+              value={radioState.data()?.nextTrackFileId ?? ""}
+              onChange={(e) => {
+                const val = e.currentTarget.value;
+                void setRadioTrack.mutate({
+                  slot: "next",
+                  fileId: val ? (val as Id<"files">) : undefined,
+                });
+              }}
+            >
+              <option value="">None</option>
+              <For each={audioFiles.data() ?? []}>
+                {(file) => (
+                  <option value={file._id}>{file.fileName}</option>
+                )}
+              </For>
+            </select>
+          </label>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+function RadioPlayer(props: {
+  radioState: {
+    currentTrackUrl?: string;
+    startedAt?: number;
+    isPaused: boolean;
+    pausePosition?: number;
+  } | null;
+}) {
+  let audioRef: HTMLAudioElement | undefined;
+  const [autoplayBlocked, setAutoplayBlocked] = createSignal(false);
+
+  const tryPlay = () => {
+    if (!audioRef) return;
+    const promise = audioRef.play();
+    if (promise) {
+      promise.catch(() => setAutoplayBlocked(true));
+    }
+  };
+
+  const seekToSync = () => {
+    if (!audioRef || !props.radioState) return;
+    const rs = props.radioState;
+    if (rs.isPaused) {
+      audioRef.currentTime = (rs.pausePosition ?? 0) / 1000;
+      audioRef.pause();
+    } else if (rs.startedAt) {
+      audioRef.currentTime = (Date.now() - rs.startedAt) / 1000;
+      tryPlay();
+    }
+  };
+
+  createEffect(() => {
+    const rs = props.radioState;
+    if (!audioRef || !rs) return;
+
+    if (!rs.currentTrackUrl) {
+      audioRef.pause();
+      audioRef.removeAttribute("src");
+      return;
+    }
+
+    if (audioRef.src !== rs.currentTrackUrl) {
+      audioRef.src = rs.currentTrackUrl;
+      audioRef.addEventListener("canplay", () => seekToSync(), { once: true });
+    } else {
+      seekToSync();
+    }
+  });
+
+  // Drift correction every 5s
+  createEffect(() => {
+    const rs = props.radioState;
+    if (!rs || rs.isPaused || !rs.startedAt) return;
+
+    const interval = setInterval(() => {
+      if (!audioRef || audioRef.paused) return;
+      const expected = (Date.now() - rs.startedAt!) / 1000;
+      if (Math.abs(audioRef.currentTime - expected) > 2) {
+        audioRef.currentTime = expected;
+      }
+    }, 5000);
+
+    onCleanup(() => clearInterval(interval));
+  });
+
+  return (
+    <>
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={audioRef} style={{ display: "none" }} />
+      <Show when={autoplayBlocked()}>
+        <button
+          class="mt-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-white/70 transition hover:bg-white/15 hover:text-white"
+          type="button"
+          onClick={() => {
+            setAutoplayBlocked(false);
+            seekToSync();
+          }}
+        >
+          Click to enable audio
+        </button>
+      </Show>
+    </>
+  );
+}
+
+function CurrentlyPlayingOverlay(props: { trackName?: string }) {
+  return (
+    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none">
+      <div class="rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/80 backdrop-blur-sm">
+        {props.trackName ?? "Now playing"}
+      </div>
+    </div>
+  );
+}
+
+function NextTrackOverlay(props: { trackName?: string }) {
+  return (
+    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none">
+      <div class="rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/50 backdrop-blur-sm">
+        Up next: {props.trackName ?? "—"}
       </div>
     </div>
   );

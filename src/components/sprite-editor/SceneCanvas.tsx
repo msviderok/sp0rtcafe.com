@@ -58,6 +58,9 @@ type DeletedAssetSnapshot = {
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
+  isCurrentlyPlaying?: boolean;
+  isNextTrack?: boolean;
+  animRotationSpeed?: number;
 };
 
 type EditingAsset = {
@@ -118,6 +121,9 @@ type CopiedAssetSnapshot = {
   bgRepeat?: string;
   bgPosition?: string;
   bgSize?: string;
+  isCurrentlyPlaying?: boolean;
+  isNextTrack?: boolean;
+  animRotationSpeed?: number;
 };
 
 export default function SceneCanvas(props: {
@@ -217,6 +223,7 @@ function CanvasWithScene(props: {
   const [bgPositionDraft, setBgPositionDraft] = createSignal("");
   const [bgSizeDraft, setBgSizeDraft] = createSignal(DEFAULT_BG_SIZE);
   const [opacityDraft, setOpacityDraft] = createSignal("1");
+  const [animRotationSpeedDraft, setAnimRotationSpeedDraft] = createSignal("");
   let assetsCountAtDrop = -1;
   let copiedAssets: CopiedAssetSnapshot[] = [];
   let lastPointerClientPosition: { x: number; y: number } | null = null;
@@ -298,6 +305,7 @@ function CanvasWithScene(props: {
     setBgPositionDraft(current.bgPosition ?? current.sprite.bgPosition ?? "");
     setBgSizeDraft(current.bgSize ?? current.sprite.bgSize ?? DEFAULT_BG_SIZE);
     setOpacityDraft(String(view.opacity));
+    setAnimRotationSpeedDraft(current.animRotationSpeed ? String(current.animRotationSpeed) : "");
     setHydratedStyleEditorAssetId(current._id);
   });
 
@@ -582,6 +590,9 @@ function CanvasWithScene(props: {
       bgPosition?: string;
       bgSize?: string;
       collision?: boolean;
+      isCurrentlyPlaying?: boolean;
+      isNextTrack?: boolean;
+      animRotationSpeed?: number;
     },
     view: LocalTransform
   ) => {
@@ -602,6 +613,9 @@ function CanvasWithScene(props: {
         bgRepeat: asset.bgRepeat,
         bgPosition: asset.bgPosition,
         bgSize: asset.bgSize,
+        isCurrentlyPlaying: asset.isCurrentlyPlaying,
+        isNextTrack: asset.isNextTrack,
+        animRotationSpeed: asset.animRotationSpeed,
       },
     ]);
     setSelectedAssetIds((prev) => {
@@ -755,6 +769,8 @@ function CanvasWithScene(props: {
 
     const opacity = Number(opacityDraft().trim());
 
+    const rotSpeed = Number(animRotationSpeedDraft().trim());
+
     const patch: {
       width?: number;
       height?: number;
@@ -762,11 +778,13 @@ function CanvasWithScene(props: {
       bgRepeat: string;
       bgPosition: string;
       bgSize: string;
+      animRotationSpeed?: number;
     } = {
       bgRepeat: bgRepeatDraft() || DEFAULT_BG_REPEAT,
       bgPosition: bgPositionDraft().trim(),
       bgSize: bgSizeDraft().trim() || DEFAULT_BG_SIZE,
       opacity: Number.isFinite(opacity) ? clamp(opacity, 0, 1) : 1,
+      animRotationSpeed: Number.isFinite(rotSpeed) && rotSpeed !== 0 ? rotSpeed : undefined,
     };
 
     const width = Number(widthDraft().trim());
@@ -920,6 +938,9 @@ function CanvasWithScene(props: {
           bgRepeat: asset.bgRepeat,
           bgPosition: asset.bgPosition,
           bgSize: asset.bgSize,
+          isCurrentlyPlaying: asset.isCurrentlyPlaying,
+          isNextTrack: asset.isNextTrack,
+          animRotationSpeed: asset.animRotationSpeed,
         };
       });
   };
@@ -1850,6 +1871,8 @@ function CanvasWithScene(props: {
                       rotation={view()!.rotation}
                       locked={view()!.locked}
                       collision={asset()!.collision ?? false}
+                      isCurrentlyPlaying={asset()!.isCurrentlyPlaying ?? false}
+                      isNextTrack={asset()!.isNextTrack ?? false}
                       canResizeFreely={canAssetResizeFreely(asset()!)}
                       selectionMode={selectionMode()}
                       actionsDisabled={areSpriteActionsDisabled()}
@@ -1991,6 +2014,17 @@ function CanvasWithScene(props: {
                                     onBlur={() => void handleCommitStyleEditor()}
                                   />
                                 </label>
+                                <label class="text-[10px] text-white/40 w-auto uppercase tracking-widest">
+                                  Rotation (deg/s)
+                                  <input
+                                    class="mt-1 h-7 w-full rounded-lg border border-white/8 bg-white/6 px-2 text-xs text-white outline-none transition placeholder:text-white/15 focus:border-white/16 focus:bg-white/10"
+                                    value={animRotationSpeedDraft()}
+                                    inputmode="decimal"
+                                    placeholder="0 = off, + = CW, − = CCW"
+                                    onInput={(event) => setAnimRotationSpeedDraft(event.currentTarget.value)}
+                                    onBlur={() => void handleCommitStyleEditor()}
+                                  />
+                                </label>
                               </div>
                               <button
                                 class="h-7 rounded-lg border border-white/8 bg-white/8 px-2.5 text-[11px] text-white/70 transition hover:border-white/14 hover:bg-white/14 hover:text-white active:scale-95"
@@ -2095,6 +2129,16 @@ function CanvasWithScene(props: {
                       onToggleCollision={() => {
                         void applyAssetPatch(asset()!, {
                           collision: !(asset()!.collision ?? false),
+                        });
+                      }}
+                      onToggleCurrentlyPlaying={() => {
+                        void applyAssetPatch(asset()!, {
+                          isCurrentlyPlaying: !(asset()!.isCurrentlyPlaying ?? false),
+                        });
+                      }}
+                      onToggleNextTrack={() => {
+                        void applyAssetPatch(asset()!, {
+                          isNextTrack: !(asset()!.isNextTrack ?? false),
                         });
                       }}
                       onToggleStyleEditor={() => {

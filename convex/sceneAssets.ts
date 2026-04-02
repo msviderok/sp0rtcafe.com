@@ -130,6 +130,9 @@ export const update = mutation({
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
+    isCurrentlyPlaying: v.optional(v.boolean()),
+    isNextTrack: v.optional(v.boolean()),
+    animRotationSpeed: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireAdminAccess(ctx);
@@ -152,6 +155,9 @@ export const update = mutation({
       bgRepeat?: string;
       bgPosition?: string;
       bgSize?: string;
+      isCurrentlyPlaying?: boolean;
+      isNextTrack?: boolean;
+      animRotationSpeed?: number;
     } = {};
 
     if (args.x !== undefined) {
@@ -190,6 +196,15 @@ export const update = mutation({
     if (args.bgSize !== undefined) {
       patch.bgSize = args.bgSize;
     }
+    if (args.isCurrentlyPlaying !== undefined) {
+      patch.isCurrentlyPlaying = args.isCurrentlyPlaying;
+    }
+    if (args.isNextTrack !== undefined) {
+      patch.isNextTrack = args.isNextTrack;
+    }
+    if (args.animRotationSpeed !== undefined) {
+      patch.animRotationSpeed = args.animRotationSpeed;
+    }
 
     await ctx.db.patch(args.assetId, patch);
   },
@@ -227,6 +242,9 @@ export const restore = mutation({
     bgRepeat: v.optional(v.string()),
     bgPosition: v.optional(v.string()),
     bgSize: v.optional(v.string()),
+    isCurrentlyPlaying: v.optional(v.boolean()),
+    isNextTrack: v.optional(v.boolean()),
+    animRotationSpeed: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireAdminAccess(ctx);
@@ -251,6 +269,9 @@ export const duplicate = mutation({
         bgRepeat: v.optional(v.string()),
         bgPosition: v.optional(v.string()),
         bgSize: v.optional(v.string()),
+        isCurrentlyPlaying: v.optional(v.boolean()),
+        isNextTrack: v.optional(v.boolean()),
+        animRotationSpeed: v.optional(v.number()),
       }),
     ),
   },
@@ -286,6 +307,9 @@ export const duplicate = mutation({
         ...(asset.bgRepeat !== undefined ? { bgRepeat: asset.bgRepeat } : {}),
         ...(asset.bgPosition !== undefined ? { bgPosition: asset.bgPosition } : {}),
         ...(asset.bgSize !== undefined ? { bgSize: asset.bgSize } : {}),
+        ...(asset.isCurrentlyPlaying !== undefined ? { isCurrentlyPlaying: asset.isCurrentlyPlaying } : {}),
+        ...(asset.isNextTrack !== undefined ? { isNextTrack: asset.isNextTrack } : {}),
+        ...(asset.animRotationSpeed !== undefined ? { animRotationSpeed: asset.animRotationSpeed } : {}),
       });
       insertedIds.push(assetId);
     }
