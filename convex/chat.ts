@@ -6,7 +6,7 @@ import { ensureCurrentUserProfile } from "./userProfiles";
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const messages = await ctx.db.query("chatMessages").order("desc").take(50);
+    const messages = await ctx.db.query("chatMessages").order("desc").take(200);
     return messages.reverse().map((message) => ({
       ...message,
       color: getAccessibleUserColor(message.color, message.tokenIdentifier),

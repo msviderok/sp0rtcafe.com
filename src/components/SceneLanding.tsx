@@ -30,7 +30,7 @@ import {
 } from "../lib/characterPhysics";
 import createGameLoop from "../lib/createGameLoop";
 import { getTextSpriteStyle, isTextSprite } from "../lib/textSprites";
-import { getReadableTextColor, withColorAlpha } from "../lib/userColors";
+import { getAccessibleUserColor, getReadableTextColor, withColorAlpha } from "../lib/userColors";
 import ChatBox from "./ChatBox";
 import CharacterPickerRail from "./scene/CharacterPickerRail";
 import QuickActionsBar from "./scene/QuickActionsBar";
@@ -2204,20 +2204,134 @@ function RadioPlayer(props: {
 }
 
 function CurrentlyPlayingOverlay(props: { trackName?: string }) {
-  return (
-    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none">
-      <div class="rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/80 backdrop-blur-sm">
-        {props.trackName ?? "Now playing"}
-      </div>
-    </div>
-  );
+  return <TrackStatusOverlay label="грає" trackName={props.trackName ?? "—"} />;
 }
 
 function NextTrackOverlay(props: { trackName?: string }) {
+  return <TrackStatusOverlay label="далі" trackName={props.trackName ?? "—"} />;
+}
+
+function TrackStatusOverlay(props: { label: string; trackName: string }) {
+  let frameRef: HTMLDivElement | undefined;
+  let textRef: HTMLDivElement | undefined;
+  let frameObserver: ResizeObserver | undefined;
+  let animationFrameId = 0;
+  const [colorVersion, setColorVersion] = createSignal(0);
+
+  const trackNameColor = createMemo(() =>
+    getAccessibleUserColor(undefined, `${props.label}:${props.trackName}:${colorVersion()}`)
+  );
+
+  const fitText = () => {
+    const frame = frameRef;
+    const text = textRef;
+    if (!frame || !text) {
+      return;
+    }
+
+    const maxFontSize = Math.max(8, Math.min(18, Math.floor(frame.clientHeight * 0.85)));
+    let nextFontSize = maxFontSize;
+
+    text.style.setProperty("font-size", `${nextFontSize}px`);
+
+    while (
+      nextFontSize > 5 &&
+      (text.scrollWidth > frame.clientWidth || text.scrollHeight > frame.clientHeight)
+    ) {
+      nextFontSize -= 1;
+      text.style.setProperty("font-size", `${nextFontSize}px`);
+    }
+  };
+
+  const scheduleFit = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (animationFrameId) {
+      window.cancelAnimationFrame(animationFrameId);
+    }
+
+    animationFrameId = window.requestAnimationFrame(() => {
+      animationFrameId = 0;
+      fitText();
+    });
+  };
+
+  createEffect(() => {
+    props.trackName;
+    scheduleFit();
+  });
+
+  createEffect(() => {
+    props.trackName;
+    untrack(() => {
+      setColorVersion((version) => version + 1);
+    });
+  });
+
+  createEffect(() => {
+    const frame = frameRef;
+    if (!frame || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    frameObserver = new ResizeObserver(() => {
+      scheduleFit();
+    });
+    frameObserver.observe(frame);
+
+    onCleanup(() => {
+      frameObserver?.disconnect();
+      frameObserver = undefined;
+    });
+  });
+
+  createEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) {
+      return;
+    }
+
+    void document.fonts.ready.then(() => {
+      scheduleFit();
+    });
+  });
+
+  onCleanup(() => {
+    frameObserver?.disconnect();
+    if (animationFrameId && typeof window !== "undefined") {
+      window.cancelAnimationFrame(animationFrameId);
+    }
+  });
+
   return (
-    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none font-pixel">
-      <div class="rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/50 backdrop-blur-sm">
-        Up next: {props.trackName ?? "—"}
+    <div class="absolute inset-0 flex items-center justify-center p-1.5 pointer-events-none">
+      <div
+        class="flex size-full flex-col items-center justify-center overflow-hidden rounded-[4px] border border-white/10 bg-black/60 px-2 py-1 backdrop-blur-sm"
+      >
+        <div class="shrink-0 text-center font-pixel text-[7px] leading-none tracking-[0.18em] text-white/45">
+          {props.label}
+        </div>
+        <div
+          ref={frameRef}
+          class="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden"
+        >
+          <div
+            ref={textRef}
+            class="max-h-full w-full overflow-hidden text-center font-pixel uppercase leading-[0.92] tracking-[0.06em]"
+            style={{
+              color: trackNameColor(),
+              "font-size": "16px",
+              "overflow-wrap": "anywhere",
+              "text-shadow": `0 1px 0 rgba(0, 0, 0, 0.9), 0 0 12px ${withColorAlpha(
+                trackNameColor(),
+                0.35
+              )}`,
+            }}
+          >
+            {props.trackName}
+          </div>
+        </div>
       </div>
     </div>
   );
