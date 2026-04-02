@@ -73,6 +73,7 @@ export default defineSchema({
     sceneId: v.id("scenes"),
     sessionId: v.string(),
     tokenIdentifier: v.optional(v.string()),
+    active: v.optional(v.boolean()),
     nickname: v.optional(v.string()),
     profileOptions: v.optional(userProfileOptionsValidator),
     actions: v.optional(
@@ -101,6 +102,7 @@ export default defineSchema({
   })
     .index("by_sceneId", ["sceneId"])
     .index("by_sceneId_and_tokenIdentifier", ["sceneId", "tokenIdentifier"])
+    .index("by_sceneId_and_active_and_updatedAt", ["sceneId", "active", "updatedAt"])
     .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
 
   userProfiles: defineTable({

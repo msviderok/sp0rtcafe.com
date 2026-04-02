@@ -23,6 +23,7 @@ type SceneCharacter = {
   _creationTime: number;
   sceneId: Id<"scenes">;
   sessionId?: string;
+  active: boolean;
   nickname: string | null;
   profileOptions: {
     color?: string;
@@ -284,6 +285,9 @@ function createOptimisticCharacter(
     _creationTime: existing?._creationTime ?? now,
     sceneId,
     sessionId,
+    active: true,
+    nickname: existing?.nickname ?? null,
+    profileOptions: existing?.profileOptions ?? {},
     actions: states.map(toCharacterMovementAction),
     x: latestState.x,
     y: latestState.y,
@@ -507,18 +511,30 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const [cameraY, setCameraY] = createSignal(0);
   const [viewportWidth, setViewportWidth] = createSignal(props.width);
   const [viewportHeight, setViewportHeight] = createSignal(props.height);
+  const initialConnectionState = convex.connectionState();
+  const [socketConnected, setSocketConnected] = createSignal(
+    initialConnectionState.isWebSocketConnected
+  );
+  const [socketHasEverConnected, setSocketHasEverConnected] = createSignal(
+    initialConnectionState.hasEverConnected
+  );
   let containerRef: HTMLDivElement | undefined;
   let cameraInitialized = false;
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
   const ownCharacter = createMemo(
     () =>
-      ((characters.data() as SceneCharacter[] | undefined) ?? []).find(
-        (character) => character.isCurrentUser
-      ) ?? null
+      !socketConnected()
+        ? null
+        : (((characters.data() as SceneCharacter[] | undefined) ?? []).find(
+            (character) => character.isCurrentUser
+          ) ?? null)
   );
   const otherCharacters = createMemo(() => {
-    console.log("characters", characters.data());
+    if (!socketConnected()) {
+      return [];
+    }
+
     return ((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
       (character) => !character.isCurrentUser
     );
@@ -527,7 +543,6 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const playerLabel = createMemo(
     () => ownCharacter()?.nickname ?? currentProfile.data()?.nickname ?? "You"
   );
-
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
@@ -540,6 +555,115 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let activeSyncMutation: Promise<void> | null = null;
   let syncRetryTimeoutId: number | undefined;
   let syncGeneration = 0;
+  let lastRequestedSocketPresence: boolean | null = null;
+
+  const syncSocketPresence = (active: boolean) => {
+    const currentUserId = userId();
+
+    if (!currentUserId) {
+      return Promise.resolve(null);
+    }
+
+    return convex.mutation(api.characters.setSocketPresence, {
+      sceneId: props.sceneId,
+      sessionId,
+      active,
+    });
+  };
+
+  createEffect(() => {
+    const unsubscribe = convex.subscribeToConnectionState((connectionState) => {
+      setSocketConnected(connectionState.isWebSocketConnected);
+      setSocketHasEverConnected(connectionState.hasEverConnected);
+    });
+
+    onCleanup(unsubscribe);
+  });
+
+  createEffect(() => {
+    socketConnected();
+    syncGeneration += 1;
+    batchStartedAt = Date.now();
+    lastSampleAt = 0;
+    lastPresenceSentAt = 0;
+    pendingSyncStates = [];
+    queuedSyncStates = [];
+    activeSyncMutation = null;
+    clearSyncRetryTimeout();
+  });
+
+  createEffect(() => {
+    props.sceneId;
+    const currentUserId = userId();
+    const connected = socketConnected();
+    const hasEverConnected = socketHasEverConnected();
+
+    if (!currentUserId) {
+      lastRequestedSocketPresence = null;
+      return;
+    }
+
+    if (!connected && !hasEverConnected) {
+      return;
+    }
+
+    if (lastRequestedSocketPresence === connected) {
+      return;
+    }
+
+    lastRequestedSocketPresence = connected;
+    void syncSocketPresence(connected).catch((error) => {
+      if (lastRequestedSocketPresence === connected) {
+        lastRequestedSocketPresence = null;
+      }
+
+      console.error("character presence sync failed", error);
+    });
+  });
+
+  createEffect(() => {
+    const sceneId = props.sceneId;
+
+    onCleanup(() => {
+      if (!socketHasEverConnected()) {
+        return;
+      }
+
+      const currentUserId = userId();
+
+      if (!currentUserId) {
+        return;
+      }
+
+      void convex
+        .mutation(api.characters.setSocketPresence, {
+          sceneId,
+          sessionId,
+          active: false,
+        })
+        .catch((error) => {
+          console.error("character scene cleanup sync failed", error);
+        });
+    });
+  });
+
+  createEffect(() => {
+    const handlePageHide = () => {
+      if (!socketHasEverConnected()) {
+        return;
+      }
+
+      void syncSocketPresence(false).catch((error) => {
+        console.error("character disconnect sync failed", error);
+      });
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+
+    onCleanup(() => {
+      window.removeEventListener("pagehide", handlePageHide);
+    });
+  });
 
   const clearSyncRetryTimeout = () => {
     if (syncRetryTimeoutId === undefined) {
@@ -551,6 +675,10 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   };
 
   onCleanup(() => {
+    lastRequestedSocketPresence = false;
+    void syncSocketPresence(false).catch((error) => {
+      console.error("character cleanup sync failed", error);
+    });
     syncGeneration += 1;
     queuedSyncStates = [];
     activeSyncMutation = null;
@@ -595,6 +723,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   createEffect(() => {
     props.sceneId;
     syncGeneration += 1;
+    lastRequestedSocketPresence = null;
     activeLeft = false;
     activeRight = false;
     jumpQueued = false;
@@ -888,6 +1017,10 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
   createEffect(() => {
     const sendBatchInterval = window.setInterval(() => {
+      if (!socketConnected()) {
+        return;
+      }
+
       const now = Date.now();
 
       if (pendingSyncStates.length === 0) {
@@ -972,6 +1105,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
       }
 
       if (
+        socketConnected() &&
         !areCharacterStatesEqual(currentState, nextState) &&
         now - lastSampleAt >= MOVEMENT_SAMPLE_INTERVAL_MS
       ) {
@@ -1054,7 +1188,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
             )}
           </For>
 
-          <Show when={playerState()}>
+          <Show when={socketConnected() ? playerState() : null}>
             {(state) => (
               <CharacterBody
                 label={playerLabel()}

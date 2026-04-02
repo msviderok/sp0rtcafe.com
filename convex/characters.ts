@@ -80,6 +80,7 @@ function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier:
     _creationTime: character._creationTime,
     sceneId: character.sceneId,
     sessionId: character.sessionId,
+    active: character.active ?? false,
     nickname: character.nickname ?? null,
     profileOptions: character.profileOptions ?? {},
     actions: character.actions ?? [],
@@ -233,6 +234,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     sceneId: args.sceneId,
     sessionId: args.sessionId,
     tokenIdentifier: identity.tokenIdentifier,
+    active: true,
     nickname: profile?.nickname,
     profileOptions: profile?.options,
     actions: acceptedActions.slice(-MAX_STORED_MOVEMENT_ACTIONS),
@@ -270,6 +272,75 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
   );
 }
 
+export const setSocketPresence = mutation({
+  args: {
+    sceneId: v.id("scenes"),
+    sessionId: v.string(),
+    active: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const existingCharacters = await ctx.db
+      .query("characters")
+      .withIndex("by_sceneId_and_tokenIdentifier", (q) =>
+        q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier)
+      )
+      .take(10);
+    const existing = getLatestCharacter(existingCharacters);
+
+    if (!existing) {
+      return null;
+    }
+
+    if (!args.active && existing.sessionId !== args.sessionId) {
+      return toPublicCharacter(existing, identity.tokenIdentifier);
+    }
+
+    const now = Date.now();
+
+    if (args.active) {
+      const profile = await getUserProfileByEmail(ctx, identity.email);
+      const patch = {
+        sessionId: args.sessionId,
+        tokenIdentifier: identity.tokenIdentifier,
+        active: true,
+        nickname: profile?.nickname ?? existing.nickname,
+        profileOptions: profile?.options ?? existing.profileOptions,
+        color: resolveCharacterColor(existing, profile, identity),
+        updatedAt: now,
+      };
+
+      await ctx.db.patch(existing._id, patch);
+      return toPublicCharacter(
+        {
+          ...existing,
+          ...patch,
+        },
+        identity.tokenIdentifier
+      );
+    }
+
+    const patch = {
+      active: false,
+      updatedAt: now,
+    };
+
+    await ctx.db.patch(existing._id, patch);
+    return toPublicCharacter(
+      {
+        ...existing,
+        ...patch,
+      },
+      identity.tokenIdentifier
+    );
+  },
+});
+
 export const listByScene = query({
   args: {
     sceneId: v.id("scenes"),
@@ -279,7 +350,12 @@ export const listByScene = query({
     const now = Date.now();
     const characters = await ctx.db
       .query("characters")
-      .withIndex("by_sceneId_and_updatedAt", (q) => q.eq("sceneId", args.sceneId))
+      .withIndex("by_sceneId_and_active_and_updatedAt", (q) =>
+        q
+          .eq("sceneId", args.sceneId)
+          .eq("active", true)
+          .gte("updatedAt", now - ACTIVE_CHARACTER_WINDOW_MS)
+      )
       .order("desc")
       .take(100);
 
