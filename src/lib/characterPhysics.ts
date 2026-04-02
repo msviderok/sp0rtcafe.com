@@ -25,18 +25,11 @@ export type SpawnOccupant = {
 
 export const CHARACTER_WIDTH = 48;
 export const CHARACTER_HEIGHT = 72;
-export const MOVE_SPEED = 320;
+export const MOVE_SPEED = 700;
 export const JUMP_VELOCITY = 720;
 export const GRAVITY = 1800;
 
-const CHARACTER_PALETTE = [
-  "#ff8a65",
-  "#4dd0e1",
-  "#ffd54f",
-  "#81c784",
-  "#ba68c8",
-  "#64b5f6",
-];
+const CHARACTER_PALETTE = ["#ff8a65", "#4dd0e1", "#ffd54f", "#81c784", "#ba68c8", "#64b5f6"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -47,7 +40,7 @@ function intersectsRect(
   y: number,
   width: number,
   height: number,
-  surface: CollisionSurface,
+  surface: CollisionSurface
 ) {
   return (
     x < surface.x + surface.width &&
@@ -57,21 +50,15 @@ function intersectsRect(
   );
 }
 
-function getHorizontalSurfaceOrder(
-  surfaces: CollisionSurface[],
-  direction: number,
-) {
+function getHorizontalSurfaceOrder(surfaces: CollisionSurface[], direction: number) {
   return [...surfaces].sort((left, right) =>
-    direction >= 0 ? left.x - right.x : right.x + right.width - (left.x + left.width),
+    direction >= 0 ? left.x - right.x : right.x + right.width - (left.x + left.width)
   );
 }
 
-function getVerticalSurfaceOrder(
-  surfaces: CollisionSurface[],
-  direction: number,
-) {
+function getVerticalSurfaceOrder(surfaces: CollisionSurface[], direction: number) {
   return [...surfaces].sort((left, right) =>
-    direction >= 0 ? left.y - right.y : right.y + right.height - (left.y + left.height),
+    direction >= 0 ? left.y - right.y : right.y + right.height - (left.y + left.height)
   );
 }
 
@@ -88,7 +75,7 @@ export function getCharacterColor(sessionId: string) {
 export function getSpawnState(
   bounds: SceneBounds,
   surfaces: CollisionSurface[],
-  occupied: SpawnOccupant[] = [],
+  occupied: SpawnOccupant[] = []
 ): CharacterState {
   const orderedSurfaces = [...surfaces].sort((left, right) => {
     if (left.y !== right.y) {
@@ -124,7 +111,7 @@ export function getSpawnState(
   const slotMinX = clamp(
     ground.x + 32,
     ground.x,
-    Math.max(ground.x, ground.x + ground.width - CHARACTER_WIDTH),
+    Math.max(ground.x, ground.x + ground.width - CHARACTER_WIDTH)
   );
   const slotMaxX = clamp(ground.x + ground.width - CHARACTER_WIDTH, 0, maxX);
   const slotCount = Math.max(1, Math.floor((slotMaxX - slotMinX) / slotSpacing) + 1);
@@ -132,11 +119,8 @@ export function getSpawnState(
     occupied
       .filter((character) => Math.abs(character.y - spawnY) <= CHARACTER_HEIGHT + 8)
       .map((character) =>
-        Math.max(
-          0,
-          Math.min(slotCount - 1, Math.round((character.x - slotMinX) / slotSpacing)),
-        ),
-      ),
+        Math.max(0, Math.min(slotCount - 1, Math.round((character.x - slotMinX) / slotSpacing)))
+      )
   );
 
   let chosenSlot = 0;
@@ -165,14 +149,12 @@ export function resolveCharacterState(
   bounds: SceneBounds,
   surfaces: CollisionSurface[],
   previous: CharacterState,
-  desired: CharacterState,
+  desired: CharacterState
 ): CharacterState {
   const maxX = Math.max(0, bounds.width - CHARACTER_WIDTH);
   const maxY = Math.max(0, bounds.height - CHARACTER_HEIGHT);
-  const horizontalDirection =
-    Math.sign(desired.x - previous.x) || Math.sign(desired.vx);
-  const verticalDirection =
-    Math.sign(desired.y - previous.y) || Math.sign(desired.vy);
+  const horizontalDirection = Math.sign(desired.x - previous.x) || Math.sign(desired.vx);
+  const verticalDirection = Math.sign(desired.y - previous.y) || Math.sign(desired.vy);
 
   let x = clamp(desired.x, 0, maxX);
   let y = clamp(previous.y, 0, maxY);

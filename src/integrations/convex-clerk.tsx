@@ -11,7 +11,6 @@ import {
   type Accessor,
   type ParentProps,
 } from "solid-js";
-import { isServer } from "solid-js/web";
 
 type ConvexClerkAuthState = {
   isAuthenticated: Accessor<boolean>;
@@ -43,7 +42,7 @@ export function ConvexClerkProvider(props: ParentProps<{ client: ConvexClient }>
   const [hasResolvedInitialAuth, setHasResolvedInitialAuth] = createSignal(false);
   const isLoading = createMemo(() => !hasResolvedInitialAuth());
   const isAuthenticated = createMemo(
-    () => Boolean(auth.isSignedIn()) && Boolean(isConvexAuthenticated()),
+    () => Boolean(auth.isSignedIn()) && Boolean(isConvexAuthenticated())
   );
   const authBindingKey = createMemo(() => {
     if (!auth.isLoaded()) {
@@ -79,7 +78,7 @@ export function ConvexClerkProvider(props: ParentProps<{ client: ConvexClient }>
   let currentBindingKey: string | null = null;
 
   createEffect(() => {
-    if (isServer) {
+    if (typeof window === "undefined") {
       return;
     }
 

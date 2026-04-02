@@ -81,6 +81,7 @@ export default defineSchema({
   })
     .index("by_sceneId", ["sceneId"])
     .index("by_sessionId", ["sessionId"])
+    .index("by_sceneId_and_sessionId", ["sceneId", "sessionId"])
     .index("by_sceneId_and_tokenIdentifier", ["sceneId", "tokenIdentifier"])
     .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
 });

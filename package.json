@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun run --parallel dev:serve convex:dev",
     "dev:local": "bun run --parallel dev:serve convex:dev:local",
-    "dev:serve": "vite dev",
+    "dev:serve": "vite dev --host",
     "build": "vite build",
     "start": "vite preview",
     "convex:dev": "convex dev",

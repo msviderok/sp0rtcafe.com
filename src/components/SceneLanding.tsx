@@ -1,21 +1,21 @@
-import { SignInButton, UserButton, useAuth } from "clerk-solidjs";
+import { SignInButton, useAuth, UserButton } from "clerk-solidjs";
 import { useConvexClient, useQuery } from "convex-solidjs";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { Id } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { useConvexClerkAuth } from "../integrations/convex-clerk";
-import createGameLoop from "../lib/createGameLoop";
 import {
   CHARACTER_HEIGHT,
   CHARACTER_WIDTH,
+  getCharacterColor,
+  getSpawnState,
   GRAVITY,
   JUMP_VELOCITY,
   MOVE_SPEED,
-  getCharacterColor,
-  getSpawnState,
   resolveCharacterState,
   type CharacterState,
 } from "../lib/characterPhysics";
+import createGameLoop from "../lib/createGameLoop";
 import { getSpriteBackgroundStyle } from "../lib/sceneStyles";
 
 type SceneCharacter = {
@@ -56,10 +56,33 @@ type SceneAsset = {
 };
 
 const SCENE_SESSION_KEY = "__sp0rtcafeSceneSessionId";
-const FIXED_DELTA = 1 / 60;
-const ACTIVE_SYNC_INTERVAL_MS = 25;
-const IDLE_SYNC_INTERVAL_MS = 250;
+const MOVEMENT_SAMPLE_INTERVAL_MS = 100;
+const MOVEMENT_BATCH_INTERVAL_MS = 100;
+const IDLE_PRESENCE_INTERVAL_MS = 5_000;
 const REMOTE_PREDICTION_WINDOW_MS = 120;
+
+type CharacterSyncState = CharacterState & {
+  clientSequence: number;
+  timeSinceBatchStart: number;
+};
+
+function createSceneSessionUuid() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function ensureSceneSessionId() {
   const sceneWindow = window as Window & { [SCENE_SESSION_KEY]?: string };
@@ -69,7 +92,7 @@ function ensureSceneSessionId() {
     return existing;
   }
 
-  const next = `session-${crypto.randomUUID()}`;
+  const next = `session-${createSceneSessionUuid()}`;
   sceneWindow[SCENE_SESSION_KEY] = next;
   return next;
 }
@@ -80,11 +103,7 @@ function isJumpKey(key: string) {
 
 function isMovementKey(key: string) {
   return (
-    key === "a" ||
-    key === "d" ||
-    key === "arrowleft" ||
-    key === "arrowright" ||
-    isJumpKey(key)
+    key === "a" || key === "d" || key === "arrowleft" || key === "arrowright" || isJumpKey(key)
   );
 }
 
@@ -103,28 +122,19 @@ function predictRemoteCharacter(
   now: number,
   width: number,
   height: number,
-  collisionSurfaces: ReturnType<typeof resolveCollisionSurfaces>,
+  collisionSurfaces: ReturnType<typeof resolveCollisionSurfaces>
 ) {
-  const elapsedSeconds = Math.min(
-    REMOTE_PREDICTION_WINDOW_MS,
-    Math.max(0, now - character.updatedAt),
-  ) / 1000;
+  const elapsedSeconds =
+    Math.min(REMOTE_PREDICTION_WINDOW_MS, Math.max(0, now - character.updatedAt)) / 1000;
 
-  return resolveCharacterState(
-    { width, height },
-    collisionSurfaces,
-    toCharacterState(character),
-    {
-      x: character.x + character.vx * elapsedSeconds,
-      y:
-        character.y +
-        character.vy * elapsedSeconds +
-        0.5 * GRAVITY * elapsedSeconds * elapsedSeconds,
-      vx: character.vx,
-      vy: character.vy + GRAVITY * elapsedSeconds,
-      grounded: character.grounded,
-    },
-  );
+  return resolveCharacterState({ width, height }, collisionSurfaces, toCharacterState(character), {
+    x: character.x + character.vx * elapsedSeconds,
+    y:
+      character.y + character.vy * elapsedSeconds + 0.5 * GRAVITY * elapsedSeconds * elapsedSeconds,
+    vx: character.vx,
+    vy: character.vy + GRAVITY * elapsedSeconds,
+    grounded: character.grounded,
+  });
 }
 
 function resolveCollisionSurfaces(assets: SceneAsset[]) {
@@ -144,7 +154,7 @@ function createOptimisticCharacter(
   sessionId: string,
   color: string,
   clientSequence: number,
-  state: CharacterState,
+  state: CharacterState
 ): SceneCharacter {
   const existing = current?.find((character) => character.isCurrentUser);
   const now = Date.now();
@@ -166,6 +176,16 @@ function createOptimisticCharacter(
     updatedAt: now,
     isCurrentUser: true,
   };
+}
+
+function areCharacterStatesEqual(left: CharacterState, right: CharacterState) {
+  return (
+    left.x === right.x &&
+    left.y === right.y &&
+    left.vx === right.vx &&
+    left.vy === right.vy &&
+    left.grounded === right.grounded
+  );
 }
 
 function SceneLoadingCard(props: { label: string }) {
@@ -238,9 +258,15 @@ export default function SceneLanding() {
       </div>
 
       <div class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[2200px] items-center justify-center">
-        <Show when={!convexAuth.isLoading()} fallback={<SceneLoadingCard label="Checking session" />}>
+        <Show
+          when={!convexAuth.isLoading()}
+          fallback={<SceneLoadingCard label="Checking session" />}
+        >
           <Show when={convexAuth.isAuthenticated()} fallback={<SceneAuthGate />}>
-            <Show when={!defaultScene.isLoading()} fallback={<SceneLoadingCard label="Loading scene" />}>
+            <Show
+              when={!defaultScene.isLoading()}
+              fallback={<SceneLoadingCard label="Loading scene" />}
+            >
               <Show
                 when={defaultScene.data()}
                 fallback={
@@ -288,9 +314,13 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const assets = useQuery(api.sceneAssets.listByScene, () => ({ sceneId: props.sceneId }), {
     keepPreviousData: true,
   });
-  const characters = useQuery(api.characters.listByScene, () => ({ sceneId: props.sceneId }), {
-    keepPreviousData: true,
-  });
+  const characters = useQuery(
+    api.characters.listByScene,
+    () => ({ sceneId: props.sceneId, sessionId }),
+    {
+      keepPreviousData: true,
+    }
+  );
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
   const [frameNow, setFrameNow] = createSignal(Date.now());
   const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
@@ -299,30 +329,37 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const ownCharacter = createMemo(
     () =>
       ((characters.data() as SceneCharacter[] | undefined) ?? []).find(
-        (character) => character.isCurrentUser,
-      ) ?? null,
+        (character) => character.isCurrentUser
+      ) ?? null
+  );
+  const otherCharacters = createMemo(() =>
+    ((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
+      (character) => !character.isCurrentUser
+    )
   );
   const remoteCharacters = createMemo(() =>
-    (((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
-      (character) => !character.isCurrentUser,
-    )).map((character) => ({
-      ...character,
-      predicted: predictRemoteCharacter(
-        character,
-        frameNow(),
-        props.width,
-        props.height,
-        collisionSurfaces(),
-      ),
-    })),
+    otherCharacters().map((character) => ({
+        ...character,
+        predicted: predictRemoteCharacter(
+          character,
+          frameNow(),
+          props.width,
+          props.height,
+          collisionSurfaces()
+        ),
+      }))
   );
+  const hasRemoteCharacters = createMemo(() => otherCharacters().length > 0);
   const playerColor = createMemo(() => ownCharacter()?.color ?? fallbackPlayerColor());
 
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
-  let lastSentAt = 0;
   let latestSequence = 0;
+  let lastSampleAt = 0;
+  let lastPresenceSentAt = 0;
+  let batchStartedAt = Date.now();
+  let pendingSyncStates: CharacterSyncState[] = [];
 
   createEffect(() => {
     const nextUserId = userId();
@@ -345,8 +382,11 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     activeLeft = false;
     activeRight = false;
     jumpQueued = false;
-    lastSentAt = 0;
     latestSequence = 0;
+    lastSampleAt = 0;
+    lastPresenceSentAt = 0;
+    batchStartedAt = Date.now();
+    pendingSyncStates = [];
     setPlayerState(null);
   });
 
@@ -370,13 +410,13 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
       getSpawnState(
         { width: props.width, height: props.height },
         collisionSurfaces(),
-        (((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
-          (character) => !character.isCurrentUser,
-        )).map((character) => ({
-          x: character.x,
-          y: character.y,
-        })),
-      ),
+        ((characters.data() as SceneCharacter[] | undefined) ?? [])
+          .filter((character) => !character.isCurrentUser)
+          .map((character) => ({
+            x: character.x,
+            y: character.y,
+          }))
+      )
     );
   });
 
@@ -435,68 +475,113 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     });
   });
 
-  const syncCharacter = (nextState: CharacterState, now: number) => {
-    latestSequence += 1;
-    lastSentAt = now;
+  const flushMovementBatch = (states: CharacterSyncState[]) => {
+    const latestState = states[states.length - 1];
 
-    const nextSequence = latestSequence;
+    if (!latestState) {
+      return;
+    }
 
     void convex
       .mutation(
-        api.characters.sync,
+        api.characters.syncBatch,
         {
           sceneId: props.sceneId,
           sessionId,
-          clientSequence: nextSequence,
-          x: nextState.x,
-          y: nextState.y,
-          vx: nextState.vx,
-          vy: nextState.vy,
-          grounded: nextState.grounded,
+          states,
         },
         {
           optimisticUpdate: (localStore) => {
             const current = localStore.getQuery(api.characters.listByScene, {
               sceneId: props.sceneId,
+              sessionId,
             }) as SceneCharacter[] | undefined;
             const optimisticCharacter = createOptimisticCharacter(
               current,
               props.sceneId,
               sessionId,
               playerColor(),
-              nextSequence,
-              nextState,
+              latestState.clientSequence,
+              latestState
             );
 
             localStore.setQuery(
               api.characters.listByScene,
-              { sceneId: props.sceneId },
-              [...(current ?? []).filter((character) => !character.isCurrentUser), optimisticCharacter]
-                .sort((left, right) => left._creationTime - right._creationTime),
+              { sceneId: props.sceneId, sessionId },
+              [
+                ...(current ?? []).filter((character) => !character.isCurrentUser),
+                optimisticCharacter,
+              ].sort((left, right) => left._creationTime - right._creationTime)
             );
           },
-        },
+        }
       )
       .catch((error) => {
         console.error("character sync failed", error);
       });
   };
 
-  createGameLoop({
-    fn: () => {
+  const queueMovementState = (nextState: CharacterState, now: number) => {
+    latestSequence += 1;
+    pendingSyncStates.push({
+      clientSequence: latestSequence,
+      x: nextState.x,
+      y: nextState.y,
+      vx: nextState.vx,
+      vy: nextState.vy,
+      grounded: nextState.grounded,
+      timeSinceBatchStart: now - batchStartedAt,
+    });
+    lastSampleAt = now;
+  };
+
+  createEffect(() => {
+    const sendBatchInterval = window.setInterval(() => {
       const now = Date.now();
-      setFrameNow(now);
+
+      if (pendingSyncStates.length === 0) {
+        const currentState = playerState();
+
+        if (currentState && now - lastPresenceSentAt >= IDLE_PRESENCE_INTERVAL_MS) {
+          queueMovementState(currentState, now);
+        }
+      }
+
+      batchStartedAt = now;
+
+      if (pendingSyncStates.length === 0) {
+        return;
+      }
+
+      const nextBatch = pendingSyncStates;
+      pendingSyncStates = [];
+      lastPresenceSentAt = now;
+      flushMovementBatch(nextBatch);
+    }, MOVEMENT_BATCH_INTERVAL_MS);
+
+    onCleanup(() => {
+      window.clearInterval(sendBatchInterval);
+    });
+  });
+
+  createGameLoop({
+    fn: (_timestamp, deltaSeconds) => {
+      const now = Date.now();
+
+      if (hasRemoteCharacters()) {
+        setFrameNow(now);
+      }
 
       const currentState = playerState();
 
-      if (!currentState) {
+      if (!currentState || deltaSeconds <= 0) {
         return;
       }
 
       const horizontalDirection = Number(activeRight) - Number(activeLeft);
       const shouldJump = jumpQueued;
       const nextVelocityX = horizontalDirection * MOVE_SPEED;
-      let nextVelocityY = currentState.vy + GRAVITY * FIXED_DELTA;
+      let nextVelocityY = currentState.vy + GRAVITY * deltaSeconds;
       let currentGrounded = currentState.grounded;
 
       jumpQueued = false;
@@ -511,23 +596,21 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
         collisionSurfaces(),
         currentState,
         {
-          x: currentState.x + nextVelocityX * FIXED_DELTA,
-          y: currentState.y + nextVelocityY * FIXED_DELTA,
+          x: currentState.x + nextVelocityX * deltaSeconds,
+          y: currentState.y + nextVelocityY * deltaSeconds,
           vx: nextVelocityX,
           vy: nextVelocityY,
           grounded: currentGrounded,
-        },
+        }
       );
 
       setPlayerState(nextState);
 
-      const syncInterval =
-        horizontalDirection !== 0 || !nextState.grounded || shouldJump
-          ? ACTIVE_SYNC_INTERVAL_MS
-          : IDLE_SYNC_INTERVAL_MS;
-
-      if (now - lastSentAt >= syncInterval) {
-        syncCharacter(nextState, now);
+      if (
+        !areCharacterStatesEqual(currentState, nextState) &&
+        now - lastSampleAt >= MOVEMENT_SAMPLE_INTERVAL_MS
+      ) {
+        queueMovementState(nextState, now);
       }
     },
   });
@@ -622,10 +705,12 @@ function CharacterBody(props: {
     <div
       class="pointer-events-none absolute"
       style={{
-        left: `${props.x}px`,
-        top: `${props.y}px`,
+        left: "0",
+        top: "0",
         width: `${props.width}px`,
         height: `${props.height}px`,
+        transform: `translate3d(${props.x}px, ${props.y}px, 0)`,
+        "will-change": "transform",
         "z-index": 40,
       }}
     >

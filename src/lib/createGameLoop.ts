@@ -1,37 +1,35 @@
 import { onCleanup, onMount } from "solid-js";
 import { defaultProps } from "./utils";
 
-const TICK = 16.66666666; // 60 fps | 1000ms / 60fps = 16.66ms
+const MAX_DELTA_SECONDS = 1 / 20;
 
-export default function createGameLoop(options: { autostart?: boolean; fn: () => void }) {
+export default function createGameLoop(options: {
+  autostart?: boolean;
+  fn: (timestamp: number, deltaSeconds: number) => void;
+}) {
   let mainGameLoop: number | undefined;
-  let tickTimer = 0;
-  const props = defaultProps(options, { autostart: true, fn: () => {} });
+  let previousTimestamp = 0;
+  const props = defaultProps(options, {
+    autostart: true,
+    fn: () => {},
+  });
 
   if (props.autostart) {
     onMount(() => start());
     onCleanup(() => stop());
   }
 
-  /**
-   * In order to keep the game updates more consistent – we need to limit amount of updates per second.
-   * 120 fps was way too inconsistent.
-   * 60 fps seems to be working good so far.
-   */
-  async function gameLoop(timestamp: number) {
-    if (!tickTimer) tickTimer = timestamp;
-    if (timestamp - tickTimer < TICK) {
-      mainGameLoop = requestAnimationFrame(gameLoop);
-      return;
-    }
-    tickTimer += TICK;
-
-    props.fn();
-
+  function gameLoop(timestamp: number) {
+    const deltaSeconds = previousTimestamp
+      ? Math.min(MAX_DELTA_SECONDS, (timestamp - previousTimestamp) / 1000)
+      : 0;
+    previousTimestamp = timestamp;
+    props.fn(timestamp, deltaSeconds);
     mainGameLoop = requestAnimationFrame(gameLoop);
   }
 
   function start() {
+    previousTimestamp = 0;
     mainGameLoop = requestAnimationFrame(gameLoop);
   }
 
@@ -40,6 +38,8 @@ export default function createGameLoop(options: { autostart?: boolean; fn: () =>
       cancelAnimationFrame(mainGameLoop);
       mainGameLoop = undefined;
     }
+
+    previousTimestamp = 0;
   }
 
   return { start, stop };
