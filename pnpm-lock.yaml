@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@solidjs/start':
+    hash: 153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba
+    path: patches/@solidjs__start.patch
+
 importers:
 
   .:
@@ -22,10 +27,10 @@ importers:
         version: 0.16.1(solid-js@1.9.12)
       '@solidjs/start':
         specifier: 2.0.0-alpha.2
-        version: 2.0.0-alpha.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
+        version: 2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
       '@solidjs/vite-plugin-nitro-2':
         specifier: ^0.1.0
-        version: 0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
+        version: 0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
       '@tanstack/solid-hotkeys':
         specifier: ^0.9.1
         version: 0.9.1(solid-js@1.9.12)
@@ -34,13 +39,13 @@ importers:
         version: 3.13.23(solid-js@1.9.12)
       '@uploadthing/solid':
         specifier: ^7.3.3
-        version: 7.3.3(solid-js@1.9.12)(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))
+        version: 7.3.3(solid-js@1.9.12)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
       clerk-solidjs:
         specifier: ^2.0.10
-        version: 2.0.10(@solidjs/router@0.16.1(solid-js@1.9.12))(@solidjs/start@2.0.0-alpha.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)))(solid-js@1.9.12)
+        version: 2.0.10(@solidjs/router@0.16.1(solid-js@1.9.12))(@solidjs/start@2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)))(solid-js@1.9.12)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -53,6 +58,9 @@ importers:
       dotenv:
         specifier: ^17.4.0
         version: 17.4.0
+      h3:
+        specifier: 2.0.1-rc.4
+        version: 2.0.1-rc.4
       shadcn:
         specifier: ^4.1.1
         version: 4.1.2(@types/node@25.5.0)
@@ -73,7 +81,7 @@ importers:
         version: 1.4.0
       uploadthing:
         specifier: ^7.7.4
-        version: 7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2)
+        version: 7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2)
       vaul:
         specifier: ^1.1.2
         version: 1.1.2
@@ -5490,7 +5498,7 @@ snapshots:
     dependencies:
       solid-js: 1.9.12
 
-  '@solidjs/start@2.0.0-alpha.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
+  '@solidjs/start@2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/traverse': 7.29.0
@@ -5525,9 +5533,9 @@ snapshots:
       - crossws
       - supports-color
 
-  '@solidjs/vite-plugin-nitro-2@0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
+  '@solidjs/vite-plugin-nitro-2@0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
     dependencies:
-      nitropack: 2.13.3(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))
+      nitropack: 2.13.3(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))
       vite: 7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)
     transitivePeerDependencies:
       - '@azure/app-configuration'
@@ -5774,12 +5782,12 @@ snapshots:
       effect: 3.17.7
       sqids: 0.3.0
 
-  '@uploadthing/solid@7.3.3(solid-js@1.9.12)(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))':
+  '@uploadthing/solid@7.3.3(solid-js@1.9.12)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))':
     dependencies:
       '@uploadthing/shared': 7.1.10
       file-selector: 0.6.0
       solid-js: 1.9.12
-      uploadthing: 7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2)
+      uploadthing: 7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2)
 
   '@vercel/nft@1.5.0(rollup@4.60.1)':
     dependencies:
@@ -6060,7 +6068,7 @@ snapshots:
     dependencies:
       clsx: 2.1.1
 
-  clerk-solidjs@2.0.10(@solidjs/router@0.16.1(solid-js@1.9.12))(@solidjs/start@2.0.0-alpha.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)))(solid-js@1.9.12):
+  clerk-solidjs@2.0.10(@solidjs/router@0.16.1(solid-js@1.9.12))(@solidjs/start@2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)))(solid-js@1.9.12):
     dependencies:
       '@clerk/backend': 1.34.0
       '@clerk/shared': 2.22.0
@@ -6068,7 +6076,7 @@ snapshots:
       '@solid-primitives/destructure': 0.1.17(solid-js@1.9.12)
       '@solid-primitives/memo': 1.4.5(solid-js@1.9.12)
       '@solidjs/router': 0.16.1(solid-js@1.9.12)
-      '@solidjs/start': 2.0.0-alpha.2(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
+      '@solidjs/start': 2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
       '@tanstack/solid-query': 5.96.1(solid-js@1.9.12)
       solid-js: 1.9.12
     transitivePeerDependencies:
@@ -7154,7 +7162,7 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  nitropack@2.13.3(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2)):
+  nitropack@2.13.3(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2)):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@rollup/plugin-alias': 6.0.0(rollup@4.60.1)
@@ -7221,7 +7229,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 6.0.2
       unplugin-utils: 0.3.1
-      unstorage: 1.17.5(db0@0.3.4)(ioredis@5.10.1)(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2))
+      unstorage: 1.17.5(db0@0.3.4)(ioredis@5.10.1)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.1
@@ -8135,7 +8143,7 @@ snapshots:
       picomatch: 4.0.4
       webpack-virtual-modules: 0.6.2
 
-  unstorage@1.17.5(db0@0.3.4)(ioredis@5.10.1)(uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2)):
+  unstorage@1.17.5(db0@0.3.4)(ioredis@5.10.1)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2)):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -8148,7 +8156,7 @@ snapshots:
     optionalDependencies:
       db0: 0.3.4
       ioredis: 5.10.1
-      uploadthing: 7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2)
+      uploadthing: 7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2)
 
   until-async@3.0.2: {}
 
@@ -8181,7 +8189,7 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  uploadthing@7.7.4(express@5.2.1)(h3@1.15.11)(tailwindcss@4.2.2):
+  uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2):
     dependencies:
       '@effect/platform': 0.90.3(effect@3.17.7)
       '@standard-schema/spec': 1.0.0-beta.4
@@ -8190,7 +8198,7 @@ snapshots:
       effect: 3.17.7
     optionalDependencies:
       express: 5.2.1
-      h3: 1.15.11
+      h3: 2.0.1-rc.4
       tailwindcss: 4.2.2
 
   uqr@0.1.2: {}

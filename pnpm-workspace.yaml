@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@solidjs/start': patches/@solidjs__start.patch

@@ -1,0 +1,237 @@
+diff --git a/dist/config/dev-server.js b/dist/config/dev-server.js
+index ab966eadf274b4fac10beaf9bdd983da2ebe93f6..ff54727c1376add9b6fc50551b4887d528575b55 100644
+--- a/dist/config/dev-server.js
++++ b/dist/config/dev-server.js
+@@ -11,7 +11,7 @@ export function devServer() {
+                         res.setHeader("content-encoding", "identity");
+                         const webReq = new NodeRequest({ req, res });
+                         const def = await import(process.cwd() + "/dist/server/entry-server.js");
+-                        sendNodeResponse(res, await def.default.fetch(webReq));
++                        sendNodeResponse(res, await (await resolveWebHandler(def.default))(webReq));
+                     });
+                 };
+             },
+@@ -40,7 +40,7 @@ export function devServer() {
+                         const webReq = new NodeRequest({ req, res });
+                         try {
+                             const serverEntry = await serverEnv.runner.import("./src/entry-server.tsx");
+-                            const webRes = await serverEntry.default.fetch(webReq);
++                            const webRes = await (await resolveWebHandler(serverEntry.default))(webReq);
+                             return sendNodeResponse(res, webRes);
+                         }
+                         catch (e) {
+@@ -84,6 +84,23 @@ export function devServer() {
+         },
+     ];
+ }
++let rootToWebHandler;
++async function resolveWebHandler(entry) {
++    if ("fetch" in entry && typeof entry.fetch === "function") {
++        return entry.fetch.bind(entry);
++    }
++    if ("request" in entry && typeof entry.request === "function") {
++        return (req) => entry.request(req);
++    }
++    if ("handler" in entry && typeof entry.handler === "function") {
++        if (!rootToWebHandler) {
++            const rootH3 = await import(process.cwd() + "/node_modules/h3/dist/index.mjs");
++            rootToWebHandler = rootH3.toWebHandler;
++        }
++        return rootToWebHandler(entry);
++    }
++    throw new TypeError("Unsupported server entry shape");
++}
+ /**
+  * Removes Vite internal middleware
+  *
+diff --git a/dist/server/handler.d.ts b/dist/server/handler.d.ts
+index 5f2ceef7c5a6767d9adc42cea37667205de7abde..a63a69790f441503d8b711aa5e46b364cbb448b7 100644
+--- a/dist/server/handler.d.ts
++++ b/dist/server/handler.d.ts
+@@ -1,6 +1,6 @@
+-import { H3 } from "h3";
++import { App } from "h3";
+ import type { JSX } from "solid-js";
+ import type { FetchEvent, HandlerOptions, PageEvent } from "./types.ts";
+-export declare function createBaseHandler(createPageEvent: (e: FetchEvent) => Promise<PageEvent>, fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): H3;
+-export declare function createHandler(fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): H3;
++export declare function createBaseHandler(createPageEvent: (e: FetchEvent) => Promise<PageEvent>, fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): App;
++export declare function createHandler(fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): App;
+ export declare function createPageEvent(ctx: FetchEvent): Promise<PageEvent>;
+diff --git a/dist/server/handler.js b/dist/server/handler.js
+index 38b151ce27b15ad50813dbb90140c0a4103aa7c5..21b5aa4998d0ac1a842eec52ec1ed0a7d2f385c8 100644
+--- a/dist/server/handler.js
++++ b/dist/server/handler.js
+@@ -1,5 +1,5 @@
+ import middleware from "solid-start:middleware";
+-import { defineHandler, getCookie, H3, redirect, setCookie } from "h3";
++import { createApp, defineEventHandler, getCookie, setCookie } from "h3";
+ import { sharedConfig } from "solid-js";
+ import { getRequestEvent, renderToStream, renderToString } from "solid-js/web";
+ import { createRoutes } from "../router.jsx";
+@@ -10,7 +10,7 @@ import { handleServerFunction } from "./server-functions-handler.js";
+ import { getExpectedRedirectStatus } from "./util.js";
+ const SERVER_FN_BASE = "/_server";
+ export function createBaseHandler(createPageEvent, fn, options = {}) {
+-    const handler = defineHandler({
++    const handler = defineEventHandler({
+         middleware: middleware.length ? middleware.map(decorateMiddleware) : undefined,
+         handler: decorateHandler(async (e) => {
+             const event = getRequestEvent();
+@@ -56,7 +56,7 @@ export function createBaseHandler(createPageEvent, fn, options = {}) {
+                 context.complete = true;
+                 if (context.response && context.response.headers.get("Location")) {
+                     const status = getExpectedRedirectStatus(context.response);
+-                    return redirect(context.response.headers.get("Location"), status);
++                    return produceResponseWithEventHeaders(Response.redirect(context.response.headers.get("Location"), status));
+                 }
+                 event.response.headers.set("content-type", "text/html");
+                 return html;
+@@ -86,7 +86,7 @@ export function createBaseHandler(createPageEvent, fn, options = {}) {
+             const stream = _stream; // stream has a hidden 'then' method
+             if (context.response && context.response.headers.get("Location")) {
+                 const status = getExpectedRedirectStatus(context.response);
+-                return redirect(context.response.headers.get("Location"), status);
++                return produceResponseWithEventHeaders(Response.redirect(context.response.headers.get("Location"), status));
+             }
+             if (mode === "async")
+                 return await stream;
+@@ -101,7 +101,7 @@ export function createBaseHandler(createPageEvent, fn, options = {}) {
+             return readable;
+         }),
+     });
+-    const app = new H3();
++    const app = createApp();
+     app.use(handler);
+     return app;
+ }
+diff --git a/dist/server/spa/handler.d.ts b/dist/server/spa/handler.d.ts
+index cea9b5a3c02a20ff4bb73fb85c5fe219f7ec0835..9c00aaf2aa1cc295987b401b117b580adeff552c 100644
+--- a/dist/server/spa/handler.d.ts
++++ b/dist/server/spa/handler.d.ts
+@@ -4,4 +4,4 @@ import type { HandlerOptions, PageEvent } from "../types.ts";
+  *
+  * Read more: https://docs.solidjs.com/solid-start/reference/server/create-handler
+  */
+-export declare function createHandler(fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions)): import("h3").H3;
++export declare function createHandler(fn: (context: PageEvent) => JSX.Element, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions)): import("h3").App;
+diff --git a/src/config/dev-server.ts b/src/config/dev-server.ts
+index d88a8cb0dd44e2a318994920eb704f29a563a981..c5417742b4b469303a18cd4dab0cced86c97fd21 100644
+--- a/src/config/dev-server.ts
++++ b/src/config/dev-server.ts
+@@ -16,10 +16,8 @@ export function devServer(): Array<PluginOption> {
+           server.middlewares.use(async (req, res) => {
+             res.setHeader("content-encoding", "identity");
+             const webReq = new NodeRequest({ req, res });
+-            const def: {
+-              default: { fetch: (req: Request) => Promise<Response> };
+-            } = await import(process.cwd() + "/dist/server/entry-server.js");
+-            sendNodeResponse(res, await def.default.fetch(webReq));
++            const def = await import(process.cwd() + "/dist/server/entry-server.js");
++            sendNodeResponse(res, await (await resolveWebHandler(def.default))(webReq));
+           });
+         };
+       },
+@@ -52,11 +50,8 @@ export function devServer(): Array<PluginOption> {
+             const webReq = new NodeRequest({ req, res });
+ 
+             try {
+-              const serverEntry: {
+-                default: { fetch: (req: Request) => Promise<Response> };
+-              } = await serverEnv.runner.import("./src/entry-server.tsx");
+-
+-              const webRes = await serverEntry.default.fetch(webReq);
++              const serverEntry = await serverEnv.runner.import("./src/entry-server.tsx");
++              const webRes = await (await resolveWebHandler(serverEntry.default))(webReq);
+ 
+               return sendNodeResponse(res, webRes);
+             } catch (e: unknown) {
+@@ -117,6 +112,37 @@ export function devServer(): Array<PluginOption> {
+   ];
+ }
+ 
++let rootToWebHandler:
++  | ((entry: { handler: (...args: unknown[]) => unknown }) => (req: Request) => Promise<Response>)
++  | undefined;
++
++async function resolveWebHandler(
++  entry: {
++    fetch?: (req: Request) => Promise<Response>;
++    request?: (req: Request, init?: RequestInit, context?: Record<string, unknown>) => Promise<Response>;
++    handler?: (...args: unknown[]) => unknown;
++  },
++) {
++  if ("fetch" in entry && typeof entry.fetch === "function") {
++    return entry.fetch.bind(entry);
++  }
++
++  if ("request" in entry && typeof entry.request === "function") {
++    return (req: Request) => entry.request!(req);
++  }
++
++  if ("handler" in entry && typeof entry.handler === "function") {
++    if (!rootToWebHandler) {
++      const rootH3 = await import(process.cwd() + "/node_modules/h3/dist/index.mjs");
++      rootToWebHandler = rootH3.toWebHandler;
++    }
++
++    return rootToWebHandler(entry);
++  }
++
++  throw new TypeError("Unsupported server entry shape");
++}
++
+ /**
+  * Removes Vite internal middleware
+  *
+diff --git a/src/server/handler.ts b/src/server/handler.ts
+index 206bc9e261c605647c46f4a5b8055148e8e41b94..f0ceabdeb27ebc456f1ca0e5b4d3335b5d349275 100644
+--- a/src/server/handler.ts
++++ b/src/server/handler.ts
+@@ -1,5 +1,5 @@
+ import middleware from "solid-start:middleware";
+-import { defineHandler, getCookie, H3, type H3Event, redirect, setCookie } from "h3";
++import { createApp, defineEventHandler, getCookie, type H3Event, setCookie } from "h3";
+ import { join } from "pathe";
+ import type { JSX } from "solid-js";
+ import { sharedConfig } from "solid-js";
+@@ -20,7 +20,7 @@ export function createBaseHandler(
+   fn: (context: PageEvent) => JSX.Element,
+   options: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>) = {},
+ ) {
+-  const handler = defineHandler({
++  const handler = defineEventHandler({
+     middleware: middleware.length ? middleware.map(decorateMiddleware) : undefined,
+     handler: decorateHandler(async (e: H3Event) => {
+       const event = getRequestEvent()!;
+@@ -76,7 +76,9 @@ export function createBaseHandler(
+ 
+         if (context.response && context.response.headers.get("Location")) {
+           const status = getExpectedRedirectStatus(context.response);
+-          return redirect(context.response.headers.get("Location")!, status);
++          return produceResponseWithEventHeaders(
++            Response.redirect(context.response.headers.get("Location")!, status),
++          );
+         }
+ 
+         event.response.headers.set("content-type", "text/html");
+@@ -107,7 +109,9 @@ export function createBaseHandler(
+ 
+       if (context.response && context.response.headers.get("Location")) {
+         const status = getExpectedRedirectStatus(context.response);
+-        return redirect(context.response.headers.get("Location")!, status);
++        return produceResponseWithEventHeaders(
++          Response.redirect(context.response.headers.get("Location")!, status),
++        );
+       }
+ 
+       if (mode === "async") return await stream;
+@@ -125,7 +129,7 @@ export function createBaseHandler(
+     }),
+   });
+ 
+-  const app = new H3();
++  const app = createApp();
+ 
+   app.use(handler);
+ 
