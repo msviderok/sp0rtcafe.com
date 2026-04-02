@@ -6,6 +6,7 @@ import "./app.css";
 import LoadingScreen from "./components/LoadingScreen";
 import { client } from "./integrations/convex";
 import { ConvexClerkProvider } from "./integrations/convex-clerk";
+import { CurrentUserBootstrapProvider } from "./integrations/current-user-bootstrap";
 
 export default function App() {
   return (
@@ -13,7 +14,9 @@ export default function App() {
       root={(props) => (
         <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
           <ConvexClerkProvider client={client}>
-            <Suspense fallback={<LoadingScreen />}>{props.children}</Suspense>
+            <CurrentUserBootstrapProvider>
+              <Suspense fallback={<LoadingScreen />}>{props.children}</Suspense>
+            </CurrentUserBootstrapProvider>
           </ConvexClerkProvider>
         </ClerkProvider>
       )}

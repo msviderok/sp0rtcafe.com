@@ -292,9 +292,7 @@ export const listAudio = query({
       .withIndex("by_status", (q) => q.eq("status", "uploaded"))
       .take(500);
     return files.filter(
-      (f) =>
-        f.mimeType?.startsWith("audio/") ||
-        /\.(mp3|ogg|wav|aac)$/i.test(f.fileName),
+      (f) => f.mimeType?.startsWith("audio/") || /\.(mp3|ogg|wav|aac)$/i.test(f.fileName),
     );
   },
 });
@@ -335,7 +333,10 @@ export const setAudioDuration = mutation({
       !radioState.isPaused &&
       radioState.startedAt !== undefined
     ) {
-      const remainingMs = Math.max(0, args.durationMs - Math.max(0, Date.now() - radioState.startedAt));
+      const remainingMs = Math.max(
+        0,
+        args.durationMs - Math.max(0, Date.now() - radioState.startedAt),
+      );
 
       await ctx.scheduler.runAfter(remainingMs, api.radio.advanceTrack, {
         expectedCurrentFileId: file._id,

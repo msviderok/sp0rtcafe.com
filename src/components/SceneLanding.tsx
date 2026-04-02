@@ -4,6 +4,18 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack }
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useConvexClerkAuth } from "../integrations/convex-clerk";
+import { useCurrentUserBootstrap } from "../integrations/current-user-bootstrap";
+import { resolveCharacterAnimationState } from "../lib/characterAnimationState";
+import type { CharacterFacing } from "../lib/characterCatalog";
+import {
+  getDefaultPlayableCharacterId,
+  humanizeCharacterActionName,
+} from "../lib/characterCatalog";
+import {
+  getCharacterActionUrl,
+  getPlayableCharacterManifestWithUrls,
+  PLAYABLE_CHARACTER_CATALOG_WITH_URLS,
+} from "../lib/characterCatalog.client";
 import {
   CHARACTER_HEIGHT,
   CHARACTER_WIDTH,
@@ -18,6 +30,8 @@ import {
 import createGameLoop from "../lib/createGameLoop";
 import { getSpriteBackgroundStyle } from "../lib/sceneStyles";
 import ChatBox from "./ChatBox";
+import CharacterPickerRail from "./scene/CharacterPickerRail";
+import QuickActionsBar from "./scene/QuickActionsBar";
 
 type SceneCharacter = {
   _id: Id<"characters">;
@@ -26,6 +40,7 @@ type SceneCharacter = {
   sessionId?: string;
   active: boolean;
   nickname: string | null;
+  nicknameShort: string | null;
   profileOptions: {
     color?: string;
     characterSprite?: string;
@@ -38,6 +53,10 @@ type SceneCharacter = {
   width: number;
   height: number;
   grounded: boolean;
+  currentAnimation: string;
+  facing: CharacterFacing;
+  isRunning: boolean;
+  manualActionName: string | null;
   color: string;
   lastProcessedSequence: number;
   updatedAt: number;
@@ -52,6 +71,10 @@ type CharacterMovementAction = {
   vy: number;
   grounded: boolean;
   timeSinceBatchStart: number;
+  animationName: string | null;
+  facing: CharacterFacing;
+  isRunning: boolean;
+  manualActionName: string | null;
 };
 
 type SceneAsset = {
@@ -83,6 +106,7 @@ const LAST_CHARACTER_STATE_KEY_PREFIX = "__sp0rtcafeLastCharacterState";
 const MOVEMENT_SAMPLE_INTERVAL_MS = 16;
 const MOVEMENT_BATCH_INTERVAL_MS = 50;
 const IDLE_PRESENCE_INTERVAL_MS = 5_000;
+const RUN_SPEED_MULTIPLIER = 1.5;
 const RADIO_VOLUME_STORAGE_KEY = "radio_volume";
 const RADIO_VOLUME_STEP = 0.05;
 const RADIO_VOLUME_DRAG_SENSITIVITY = 0.005;
@@ -97,6 +121,10 @@ const PLAYER_FOCUS_OFFSET_Y = CHARACTER_HEIGHT * 0.4;
 type CharacterSyncState = CharacterState & {
   clientSequence: number;
   timeSinceBatchStart: number;
+  animationName: string;
+  facing: CharacterFacing;
+  isRunning: boolean;
+  manualActionName: string | null;
 };
 
 type StoredCharacterSnapshot = CharacterState & {
@@ -112,7 +140,9 @@ function clampRadioVolume(value: number) {
 }
 
 function snapRadioVolume(value: number) {
-  return clampRadioVolume(Math.round(clampRadioVolume(value) / RADIO_VOLUME_STEP) * RADIO_VOLUME_STEP);
+  return clampRadioVolume(
+    Math.round(clampRadioVolume(value) / RADIO_VOLUME_STEP) * RADIO_VOLUME_STEP
+  );
 }
 
 function readStoredRadioVolume() {
@@ -262,6 +292,25 @@ function isMovementKey(key: string) {
   );
 }
 
+function isQuickActionKey(key: string) {
+  return /^[1-9]$/.test(key);
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    target.isContentEditable ||
+    target.closest("[contenteditable='true']") !== null
+  );
+}
+
 function toCharacterState(character: SceneCharacter): CharacterState {
   return {
     x: character.x,
@@ -292,6 +341,10 @@ function toCharacterMovementAction(state: CharacterSyncState): CharacterMovement
     vy: state.vy,
     grounded: state.grounded,
     timeSinceBatchStart: state.timeSinceBatchStart,
+    animationName: state.animationName,
+    facing: state.facing,
+    isRunning: state.isRunning,
+    manualActionName: state.manualActionName,
   };
 }
 
@@ -317,15 +370,20 @@ function createOptimisticCharacter(
     sessionId,
     active: true,
     nickname: existing?.nickname ?? null,
+    nicknameShort: existing?.nicknameShort ?? null,
     profileOptions: existing?.profileOptions ?? {},
     actions: states.map(toCharacterMovementAction),
     x: latestState.x,
     y: latestState.y,
     vx: latestState.vx,
     vy: latestState.vy,
-    width: existing?.width ?? CHARACTER_WIDTH,
-    height: existing?.height ?? CHARACTER_HEIGHT,
+    width: CHARACTER_WIDTH,
+    height: CHARACTER_HEIGHT,
     grounded: latestState.grounded,
+    currentAnimation: latestState.animationName,
+    facing: latestState.facing,
+    isRunning: latestState.isRunning,
+    manualActionName: latestState.manualActionName,
     color: existing?.color ?? color,
     lastProcessedSequence: latestState.clientSequence,
     updatedAt: now,
@@ -441,6 +499,7 @@ export default function SceneLanding() {
   const defaultScene = useQuery(api.scenes.getDefault, {});
   const currentAccess = useQuery(api.admin.getCurrentAccess, {});
   const convexAuth = useConvexClerkAuth();
+  const currentUserBootstrap = useCurrentUserBootstrap();
   const auth = useAuth();
 
   createEffect(() => {
@@ -454,7 +513,7 @@ export default function SceneLanding() {
       <div class="mx-auto mb-4 flex max-w-[2200px] items-center justify-between gap-4">
         <div class="text-[11px] uppercase tracking-[0.22em] text-white/45">
           {convexAuth.isAuthenticated()
-            ? "Move: A/D or arrows. Jump: W, Up, Space."
+            ? "Move: A/D or arrows. Jump: W, Up, Space. Actions: 1-9. Run: Shift."
             : "Sign in with Google or GitHub to play."}
         </div>
         <div class="flex items-center gap-3">
@@ -491,37 +550,42 @@ export default function SceneLanding() {
         >
           <Show when={convexAuth.isAuthenticated()} fallback={<SceneAuthGate />}>
             <Show
-              when={!defaultScene.isLoading()}
-              fallback={<SceneLoadingCard label="Loading scene" />}
+              when={currentUserBootstrap.isReady()}
+              fallback={<SceneLoadingCard label="Preparing profile" />}
             >
               <Show
-                when={defaultScene.data()}
-                fallback={
-                  <div class="flex max-w-md flex-col items-center gap-4 rounded-[4px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
-                    <div class="text-xs uppercase tracking-[0.22em] text-white/45">
-                      No scene yet
-                    </div>
-                    <div class="text-sm text-white/70">
-                      Create a scene first, then set it as default.
-                    </div>
-                    <Show when={currentAccess.data()?.isAdmin}>
-                      <a
-                        class="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15"
-                        href="/editor"
-                      >
-                        Open editor
-                      </a>
-                    </Show>
-                  </div>
-                }
+                when={!defaultScene.isLoading()}
+                fallback={<SceneLoadingCard label="Loading scene" />}
               >
-                {(scene) => (
-                  <LandingSceneCanvas
-                    sceneId={scene()._id}
-                    width={scene().width}
-                    height={scene().height}
-                  />
-                )}
+                <Show
+                  when={defaultScene.data()}
+                  fallback={
+                    <div class="flex max-w-md flex-col items-center gap-4 rounded-[4px] border border-white/10 bg-black/20 px-8 py-10 text-center backdrop-blur-sm">
+                      <div class="text-xs uppercase tracking-[0.22em] text-white/45">
+                        No scene yet
+                      </div>
+                      <div class="text-sm text-white/70">
+                        Create a scene first, then set it as default.
+                      </div>
+                      <Show when={currentAccess.data()?.isAdmin}>
+                        <a
+                          class="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15"
+                          href="/editor"
+                        >
+                          Open editor
+                        </a>
+                      </Show>
+                    </div>
+                  }
+                >
+                  {(scene) => (
+                    <LandingSceneCanvas
+                      sceneId={scene()._id}
+                      width={scene().width}
+                      height={scene().height}
+                    />
+                  )}
+                </Show>
               </Show>
             </Show>
           </Show>
@@ -535,6 +599,7 @@ export default function SceneLanding() {
 function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; height: number }) {
   const convex = useConvexClient();
   const { userId } = useAuth();
+  const currentUserBootstrap = useCurrentUserBootstrap();
 
   if (!convex) {
     throw new Error("Convex client unavailable");
@@ -557,6 +622,16 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const advanceRadioTrack = useMutation(api.radio.advanceTrack);
   const [playerState, setPlayerState] = createSignal<CharacterState | null>(null);
   const [fallbackPlayerColor, setFallbackPlayerColor] = createSignal(getCharacterColor(sessionId));
+  const [currentFacing, setCurrentFacing] = createSignal<CharacterFacing>("right");
+  const [activeManualActionName, setActiveManualActionName] = createSignal<string | null>(null);
+  const [isRunKeyHeld, setIsRunKeyHeld] = createSignal(false);
+  const [isCharacterPickerOpen, setIsCharacterPickerOpen] = createSignal(true);
+  const [pickerPreviewCharacterId, setPickerPreviewCharacterId] = createSignal<string>(
+    getDefaultPlayableCharacterId()
+  );
+  const [pendingSelectedCharacterId, setPendingSelectedCharacterId] = createSignal<string | null>(
+    null
+  );
   const [cameraX, setCameraX] = createSignal(0);
   const [cameraY, setCameraY] = createSignal(0);
   const [viewportWidth, setViewportWidth] = createSignal(props.width);
@@ -573,6 +648,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   );
   let containerRef: HTMLDivElement | undefined;
   let cameraInitialized = false;
+  let hasInitializedPickerPreview = false;
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
   const ownCharacter = createMemo(() =>
@@ -593,11 +669,103 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
   const playerColor = createMemo(() => ownCharacter()?.color ?? fallbackPlayerColor());
   const playerLabel = createMemo(
-    () => ownCharacter()?.nickname ?? currentProfile.data()?.nickname ?? "You"
+    () => currentProfile.data()?.nicknameShort ?? ownCharacter()?.nicknameShort ?? "You"
+  );
+  const appliedCharacterId = createMemo(
+    () =>
+      currentProfile.data()?.options?.characterSprite ??
+      ownCharacter()?.profileOptions.characterSprite ??
+      getDefaultPlayableCharacterId()
+  );
+  const selectedCharacterId = createMemo(
+    () => pendingSelectedCharacterId() ?? appliedCharacterId()
+  );
+  const selectedCharacter = createMemo(
+    () =>
+      getPlayableCharacterManifestWithUrls(selectedCharacterId()) ??
+      PLAYABLE_CHARACTER_CATALOG_WITH_URLS[0] ??
+      null
+  );
+  const quickActionNames = createMemo(
+    () => selectedCharacter()?.quickActionNames.slice(0, 9) ?? []
+  );
+  const quickActionHotkeys = createMemo(() =>
+    quickActionNames().map((actionName, index) => ({
+      key: actionName,
+      label: humanizeCharacterActionName(actionName),
+      slot: index + 1,
+    }))
+  );
+  const currentAnimationState = createMemo(() => {
+    const state = playerState();
+    const characterId = selectedCharacterId();
+
+    if (!state) {
+      return resolveCharacterAnimationState({
+        characterId,
+        grounded: true,
+        manualActionName: activeManualActionName(),
+        previousFacing: currentFacing(),
+        velocityX: 0,
+        wantsRun: false,
+      });
+    }
+
+    return resolveCharacterAnimationState({
+      characterId,
+      grounded: state.grounded,
+      manualActionName: activeManualActionName(),
+      previousFacing: currentFacing(),
+      velocityX: state.vx,
+      wantsRun: isRunKeyHeld() && Math.abs(state.vx) > 0.5,
+    });
+  });
+  const animationSyncSignature = createMemo(
+    () =>
+      `${selectedCharacterId()}:${currentAnimationState().currentAnimation}:${currentAnimationState().facing}:${currentAnimationState().isRunning}:${currentAnimationState().manualActionName ?? ""}`
   );
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
+
+  createEffect(() => {
+    const ownFacing = ownCharacter()?.facing;
+
+    if (ownFacing) {
+      setCurrentFacing(ownFacing);
+    }
+  });
+
+  createEffect(() => {
+    const currentCharacterId = selectedCharacterId();
+    const previewCharacterId = pickerPreviewCharacterId();
+
+    if (!getPlayableCharacterManifestWithUrls(previewCharacterId)) {
+      setPickerPreviewCharacterId(currentCharacterId);
+    }
+  });
+
+  createEffect(() => {
+    const currentCharacterId = selectedCharacterId();
+    const profileCharacterId = currentProfile.data()?.options?.characterSprite;
+    const serverCharacterId = ownCharacter()?.profileOptions.characterSprite;
+
+    if (hasInitializedPickerPreview || (!profileCharacterId && !serverCharacterId)) {
+      return;
+    }
+
+    hasInitializedPickerPreview = true;
+    setPickerPreviewCharacterId(currentCharacterId);
+  });
+
+  createEffect(() => {
+    const profileCharacterId = currentProfile.data()?.options?.characterSprite ?? null;
+    if (!pendingSelectedCharacterId() || pendingSelectedCharacterId() !== profileCharacterId) {
+      return;
+    }
+
+    setPendingSelectedCharacterId(null);
+  });
 
   createEffect(() => {
     try {
@@ -639,6 +807,23 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
           }
         : {}
     );
+  };
+  const handleSelectCharacter = (characterId: string) => {
+    if (!currentAccess.data()?.canSelectCharacter) {
+      return;
+    }
+
+    setPendingSelectedCharacterId(characterId);
+    setPickerPreviewCharacterId(characterId);
+
+    void convex
+      .mutation(api.userProfiles.selectCharacterSprite, {
+        characterSprite: characterId,
+      })
+      .catch((error) => {
+        console.error("character selection failed", error);
+        setPendingSelectedCharacterId(null);
+      });
   };
   let latestSequence = 0;
   let lastSampleAt = 0;
@@ -821,6 +1006,9 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     activeLeft = false;
     activeRight = false;
     jumpQueued = false;
+    setIsRunKeyHeld(false);
+    setActiveManualActionName(null);
+    setCurrentFacing("right");
     latestSequence = 0;
     lastSampleAt = 0;
     lastPresenceSentAt = 0;
@@ -952,6 +1140,27 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     const handleKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
 
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (key === "shift") {
+        setIsRunKeyHeld(true);
+        return;
+      }
+
+      if (isQuickActionKey(key)) {
+        const actionName = quickActionNames()[Number(key) - 1] ?? null;
+
+        if (!actionName) {
+          return;
+        }
+
+        event.preventDefault();
+        setActiveManualActionName(actionName);
+        return;
+      }
+
       if (!isMovementKey(key)) {
         return;
       }
@@ -976,6 +1185,20 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     const handleKeyUp = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
 
+      if (key === "shift") {
+        setIsRunKeyHeld(false);
+        return;
+      }
+
+      if (isQuickActionKey(key)) {
+        const actionName = quickActionNames()[Number(key) - 1] ?? null;
+
+        if (actionName && activeManualActionName() === actionName) {
+          setActiveManualActionName(null);
+        }
+        return;
+      }
+
       if (key === "a" || key === "arrowleft") {
         activeLeft = false;
         return;
@@ -989,7 +1212,9 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     const clearInputState = () => {
       activeLeft = false;
       activeRight = false;
+      setIsRunKeyHeld(false);
       jumpQueued = false;
+      setActiveManualActionName(null);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1095,7 +1320,25 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     startQueuedMovementSync();
   };
 
+  const resolveLocalAnimationForState = (state: CharacterState) => {
+    const resolved = resolveCharacterAnimationState({
+      characterId: selectedCharacterId(),
+      grounded: state.grounded,
+      manualActionName: activeManualActionName(),
+      previousFacing: currentFacing(),
+      velocityX: state.vx,
+      wantsRun: isRunKeyHeld() && Math.abs(state.vx) > 0.5,
+    });
+
+    if (resolved.facing !== currentFacing()) {
+      setCurrentFacing(resolved.facing);
+    }
+
+    return resolved;
+  };
+
   const queueMovementState = (nextState: CharacterState, now: number) => {
+    const animationState = resolveLocalAnimationForState(nextState);
     latestSequence += 1;
     pendingSyncStates.push({
       clientSequence: latestSequence,
@@ -1105,9 +1348,39 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
       vy: nextState.vy,
       grounded: nextState.grounded,
       timeSinceBatchStart: now - batchStartedAt,
+      animationName: animationState.currentAnimation,
+      facing: animationState.facing,
+      isRunning: animationState.isRunning,
+      manualActionName: animationState.manualActionName,
     });
     lastSampleAt = now;
   };
+
+  const flushPendingMovementStatesNow = (now: number) => {
+    if (pendingSyncStates.length === 0) {
+      return;
+    }
+
+    const nextBatch = pendingSyncStates;
+    pendingSyncStates = [];
+    lastPresenceSentAt = now;
+    batchStartedAt = now;
+    flushMovementBatch(nextBatch);
+  };
+
+  createEffect(() => {
+    animationSyncSignature();
+    const connected = socketConnected();
+    const state = untrack(playerState);
+
+    if (!state || !connected) {
+      return;
+    }
+
+    const now = Date.now();
+    queueMovementState(state, now);
+    flushPendingMovementStatesNow(now);
+  });
 
   createEffect(() => {
     const sendBatchInterval = window.setInterval(() => {
@@ -1125,16 +1398,12 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
         }
       }
 
-      batchStartedAt = now;
-
       if (pendingSyncStates.length === 0) {
+        batchStartedAt = now;
         return;
       }
 
-      const nextBatch = pendingSyncStates;
-      pendingSyncStates = [];
-      lastPresenceSentAt = now;
-      flushMovementBatch(nextBatch);
+      flushPendingMovementStatesNow(now);
     }, MOVEMENT_BATCH_INTERVAL_MS);
 
     onCleanup(() => {
@@ -1153,7 +1422,10 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
       const horizontalDirection = Number(activeRight) - Number(activeLeft);
       const shouldJump = jumpQueued;
-      const nextVelocityX = horizontalDirection * MOVE_SPEED;
+      const wantsRun =
+        isRunKeyHeld() && horizontalDirection !== 0 && Boolean(selectedCharacter()?.hasRun);
+      const nextVelocityX =
+        horizontalDirection * MOVE_SPEED * (wantsRun ? RUN_SPEED_MULTIPLIER : 1);
       let nextVelocityY = currentState.vy + GRAVITY * deltaSeconds;
       let currentGrounded = currentState.grounded;
 
@@ -1209,184 +1481,230 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
 
   return (
-    <div ref={containerRef} style={{ "max-width": "100%", "max-height": "100%" }}>
-      <div
-        class="overflow-hidden rounded-[4px] border border-white/10 bg-black/20 backdrop-blur-sm"
-        style={{
-          width: `${viewportWidth()}px`,
-          height: `${viewportHeight()}px`,
-        }}
-      >
+    <div class="flex w-full flex-col gap-3 xl:flex-row xl:items-start">
+      <div ref={containerRef} class="min-w-0" style={{ "max-width": "100%", "max-height": "100%" }}>
+        <Show when={currentUserBootstrap.error()}>
+          {(errorMessage) => (
+            <div class="mb-3 rounded-[4px] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+              {errorMessage()}
+            </div>
+          )}
+        </Show>
+
         <div
-          class="relative overflow-hidden bg-[#1e1512]"
+          class="overflow-hidden rounded-[4px] border border-white/10 bg-black/20 backdrop-blur-sm"
           style={{
-            width: `${props.width}px`,
-            height: `${props.height}px`,
-            transform: `translate3d(${-cameraX()}px, ${-cameraY()}px, 0)`,
-            "will-change": "transform",
+            width: `${viewportWidth()}px`,
+            height: `${viewportHeight()}px`,
           }}
         >
-          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
-          <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
-
-          <Show
-            when={!assets.isLoading()}
-            fallback={
-              <div class="absolute left-6 top-6 text-sm text-muted-foreground">
-                Loading scene...
-              </div>
-            }
+          <div
+            class="relative overflow-hidden bg-[#1e1512]"
+            style={{
+              width: `${props.width}px`,
+              height: `${props.height}px`,
+              transform: `translate3d(${-cameraX()}px, ${-cameraY()}px, 0)`,
+              "will-change": "transform",
+            }}
           >
-            <For each={(assets.data() ?? []) as SceneAsset[]}>
-              {(asset) => (
-                <div
-                  class="absolute [image-rendering:pixelated]"
-                  style={{
-                    left: `${asset.x}px`,
-                    top: `${asset.y}px`,
-                    width: `${asset.width}px`,
-                    height: `${asset.height}px`,
-                    transform: asset.animRotationSpeed
-                      ? undefined
-                      : `rotate(${asset.rotation ?? 0}deg)`,
-                    animation: asset.animRotationSpeed
-                      ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
-                      : undefined,
-                    "animation-direction":
-                      (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
-                    "transform-origin": "center center",
-                  }}
-                >
-                  <div
-                    class="absolute inset-0"
-                    style={{
-                      ...getSpriteBackgroundStyle({
-                        url: asset.sprite.url,
-                        bgRepeat: asset.bgRepeat ?? asset.sprite.bgRepeat,
-                        bgPosition: asset.bgPosition ?? asset.sprite.bgPosition,
-                        bgSize: asset.bgSize ?? asset.sprite.bgSize,
-                      }),
-                      opacity: String(asset.opacity ?? 1),
-                    }}
-                  />
-                  <Show when={asset.isCurrentlyPlaying}>
-                    <CurrentlyPlayingOverlay
-                      trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
-                    />
-                  </Show>
-                  <Show when={asset.isNextTrack}>
-                    <NextTrackOverlay
-                      trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
-                    />
-                  </Show>
-                  <Show when={asset.isVolumeControl}>
-                    <VolumeControlOverlay
-                      volume={volume()}
-                      muted={muted()}
-                      onDrag={(nextVolume) => {
-                        setMuted(false);
-                        setVolume(nextVolume);
-                      }}
-                      onToggleMute={() => {
-                        setMuted((current) => !current);
-                      }}
-                    />
-                  </Show>
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
+
+            <Show
+              when={!assets.isLoading()}
+              fallback={
+                <div class="absolute left-6 top-6 text-sm text-muted-foreground">
+                  Loading scene...
                 </div>
+              }
+            >
+              <For each={(assets.data() ?? []) as SceneAsset[]}>
+                {(asset) => (
+                  <div
+                    class="absolute [image-rendering:pixelated]"
+                    style={{
+                      left: `${asset.x}px`,
+                      top: `${asset.y}px`,
+                      width: `${asset.width}px`,
+                      height: `${asset.height}px`,
+                      transform: asset.animRotationSpeed
+                        ? undefined
+                        : `rotate(${asset.rotation ?? 0}deg)`,
+                      animation: asset.animRotationSpeed
+                        ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
+                        : undefined,
+                      "animation-direction":
+                        (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
+                      "transform-origin": "center center",
+                    }}
+                  >
+                    <div
+                      class="absolute inset-0"
+                      style={{
+                        ...getSpriteBackgroundStyle({
+                          url: asset.sprite.url,
+                          bgRepeat: asset.bgRepeat ?? asset.sprite.bgRepeat,
+                          bgPosition: asset.bgPosition ?? asset.sprite.bgPosition,
+                          bgSize: asset.bgSize ?? asset.sprite.bgSize,
+                        }),
+                        opacity: String(asset.opacity ?? 1),
+                      }}
+                    />
+                    <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
+                      <CurrentlyPlayingOverlay
+                        trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
+                      />
+                    </Show>
+                    <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
+                      <NextTrackOverlay
+                        trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
+                      />
+                    </Show>
+                    <Show when={asset.isVolumeControl}>
+                      <VolumeControlOverlay
+                        volume={volume()}
+                        muted={muted()}
+                        onDrag={(nextVolume) => {
+                          setMuted(false);
+                          setVolume(nextVolume);
+                        }}
+                        onToggleMute={() => {
+                          setMuted((current) => !current);
+                        }}
+                      />
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
+
+            <For each={otherCharacters()}>
+              {(character, index) => (
+                <RemoteCharacterBody
+                  characterSprite={character.profileOptions.characterSprite ?? null}
+                  currentAnimation={character.currentAnimation}
+                  facing={character.facing}
+                  label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
+                  color={character.color}
+                  x={character.x}
+                  y={character.y}
+                  width={character.width}
+                  height={character.height}
+                  actions={character.actions}
+                  lastProcessedSequence={character.lastProcessedSequence}
+                />
               )}
             </For>
-          </Show>
 
-          <For each={otherCharacters()}>
-            {(character, index) => (
-              <RemoteCharacterBody
-                label={character.nickname ?? `P${index() + 1}`}
-                color={character.color}
-                x={character.x}
-                y={character.y}
-                width={character.width}
-                height={character.height}
-                actions={character.actions}
-                lastProcessedSequence={character.lastProcessedSequence}
-              />
-            )}
-          </For>
-
-          <Show when={socketConnected() ? playerState() : null}>
-            {(state) => (
-              <CharacterBody
-                label={playerLabel()}
-                color={playerColor()}
-                x={state().x}
-                y={state().y}
-                width={CHARACTER_WIDTH}
-                height={CHARACTER_HEIGHT}
-              />
-            )}
-          </Show>
-        </div>
-      </div>
-
-      <RadioPlayer
-        radioState={radioState.data() ?? null}
-        isConnected={socketConnected()}
-        onTrackEnded={handleTrackEnded}
-        volume={volume()}
-        muted={muted()}
-      />
-
-      <Show when={currentAccess.data()?.isAdmin}>
-        <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[4px] border border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm">
-          <div class="text-[10px] uppercase tracking-[0.18em] text-white/40">Radio</div>
-
-          <Show when={radioState.data()?.currentTrackName}>
-            <div class="truncate text-xs text-white/70">
-              Now: {radioState.data()?.currentTrackName}
-            </div>
-          </Show>
-
-          <Show when={radioState.data()?.nextTrackName}>
-            <div class="truncate text-xs text-white/50">
-              Next: {radioState.data()?.nextTrackName}
-            </div>
-          </Show>
-
-          <div class="flex items-center gap-1.5">
-            <button
-              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
-              type="button"
-              onClick={() => {
-                void previousRadioTrack.mutate({});
-              }}
-            >
-              Prev
-            </button>
-
-            <button
-              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
-              type="button"
-              onClick={() => {
-                void advanceRadioTrack.mutate({});
-              }}
-            >
-              Next
-            </button>
-
-            <button
-              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
-              type="button"
-              onClick={() => {
-                if (radioState.data()?.isPaused) {
-                  void resumeRadio.mutate({});
-                } else {
-                  void pauseRadio.mutate({});
-                }
-              }}
-            >
-              {radioState.data()?.isPaused ? "Resume" : "Pause"}
-            </button>
+            <Show when={socketConnected() ? playerState() : null}>
+              {(state) => (
+                <CharacterBody
+                  characterSprite={selectedCharacterId()}
+                  currentAnimation={currentAnimationState().currentAnimation}
+                  facing={currentAnimationState().facing}
+                  label={playerLabel()}
+                  color={playerColor()}
+                  x={state().x}
+                  y={state().y}
+                  width={CHARACTER_WIDTH}
+                  height={CHARACTER_HEIGHT}
+                />
+              )}
+            </Show>
           </div>
         </div>
+
+        <QuickActionsBar
+          actions={quickActionHotkeys()}
+          activeActionName={activeManualActionName()}
+          isRunActive={currentAnimationState().isRunning}
+          runAvailable={selectedCharacter()?.hasRun ?? false}
+        />
+
+        <RadioPlayer
+          radioState={radioState.data() ?? null}
+          isConnected={socketConnected()}
+          onTrackEnded={handleTrackEnded}
+          volume={volume()}
+          muted={muted()}
+        />
+
+        <Show
+          when={
+            currentAccess.data()?.isAdmin &&
+            (radioState.data()?.currentTrackUrl || radioState.data()?.nextTrackUrl)
+          }
+        >
+          <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[4px] border border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm">
+            <div class="text-[10px] uppercase tracking-[0.18em] text-white/40">Radio</div>
+
+            <Show when={radioState.data()?.currentTrackName}>
+              <div class="truncate text-xs text-white/70">
+                Now: {radioState.data()?.currentTrackName}
+              </div>
+            </Show>
+
+            <Show when={radioState.data()?.nextTrackName}>
+              <div class="truncate text-xs text-white/50">
+                Next: {radioState.data()?.nextTrackName}
+              </div>
+            </Show>
+
+            <div class="flex items-center gap-1.5">
+              <button
+                class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+                type="button"
+                onClick={() => {
+                  void previousRadioTrack.mutate({});
+                }}
+              >
+                Prev
+              </button>
+
+              <button
+                class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+                type="button"
+                onClick={() => {
+                  void advanceRadioTrack.mutate({});
+                }}
+              >
+                Next
+              </button>
+
+              <button
+                class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+                type="button"
+                onClick={() => {
+                  if (radioState.data()?.isPaused) {
+                    void resumeRadio.mutate({});
+                  } else {
+                    void pauseRadio.mutate({});
+                  }
+                }}
+              >
+                {radioState.data()?.isPaused ? "Resume" : "Pause"}
+              </button>
+            </div>
+          </div>
+        </Show>
+      </div>
+
+      <Show
+        when={
+          currentAccess.data()?.canSelectCharacter &&
+          PLAYABLE_CHARACTER_CATALOG_WITH_URLS.length > 0
+        }
+      >
+        <CharacterPickerRail
+          characters={PLAYABLE_CHARACTER_CATALOG_WITH_URLS}
+          currentCharacterId={appliedCharacterId()}
+          isOpen={isCharacterPickerOpen()}
+          pendingCharacterId={pendingSelectedCharacterId()}
+          onApply={handleSelectCharacter}
+          onOpenChange={setIsCharacterPickerOpen}
+          onSelectPreview={setPickerPreviewCharacterId}
+          selectedCharacterId={pickerPreviewCharacterId()}
+        />
       </Show>
     </div>
   );
@@ -1492,9 +1810,7 @@ function RadioPlayer(props: {
     if (!audioRef) return;
     const promise = audioRef.play();
     if (promise) {
-      promise
-        .then(() => setAutoplayBlocked(false))
-        .catch(() => setAutoplayBlocked(true));
+      promise.then(() => setAutoplayBlocked(false)).catch(() => setAutoplayBlocked(true));
       return;
     }
 
@@ -1658,7 +1974,12 @@ function RadioPlayer(props: {
         playsInline
         onLoadedMetadata={() => {
           const fileId = props.radioState?.currentTrackFileId;
-          if (!fileId || !audioRef || !Number.isFinite(audioRef.duration) || audioRef.duration <= 0) {
+          if (
+            !fileId ||
+            !audioRef ||
+            !Number.isFinite(audioRef.duration) ||
+            audioRef.duration <= 0
+          ) {
             return;
           }
 
@@ -1693,7 +2014,33 @@ function NextTrackOverlay(props: { trackName?: string }) {
   );
 }
 
+function applyCharacterVisual(
+  spriteRef: HTMLDivElement | undefined,
+  characterSprite: string | null | undefined,
+  animationName: string | null | undefined,
+  facing: CharacterFacing
+) {
+  if (!spriteRef) {
+    return;
+  }
+
+  const animationUrl = getCharacterActionUrl(characterSprite, animationName);
+
+  spriteRef.style.setProperty("transform", facing === "left" ? "scaleX(-1)" : "scaleX(1)");
+  spriteRef.style.setProperty("opacity", animationUrl ? "1" : "0");
+
+  if (animationUrl) {
+    spriteRef.style.setProperty("background-image", `url(${animationUrl})`);
+    return;
+  }
+
+  spriteRef.style.removeProperty("background-image");
+}
+
 function RemoteCharacterBody(props: {
+  characterSprite: string | null;
+  currentAnimation: string;
+  facing: CharacterFacing;
   x: number;
   y: number;
   width: number;
@@ -1704,6 +2051,7 @@ function RemoteCharacterBody(props: {
   lastProcessedSequence: number;
 }) {
   let rootRef: HTMLDivElement | undefined;
+  let spriteRef: HTMLDivElement | undefined;
   let lastQueuedSequence: number | null = null;
   let activeBatch: CharacterMovementAction[] | null = null;
   let activeBatchIndex = -1;
@@ -1736,12 +2084,21 @@ function RemoteCharacterBody(props: {
     activeBatchStartY = renderedY;
   };
 
+  const setVisual = (animationName: string | null | undefined, facing: CharacterFacing) => {
+    applyCharacterVisual(spriteRef, props.characterSprite, animationName, facing);
+  };
+
+  createEffect(() => {
+    setVisual(props.currentAnimation, props.facing);
+  });
+
   createEffect(() => {
     const currentSequence = props.lastProcessedSequence;
 
     if (lastQueuedSequence === null) {
       lastQueuedSequence = currentSequence;
       setPosition(props.x, props.y);
+      setVisual(props.currentAnimation, props.facing);
       return;
     }
 
@@ -1753,6 +2110,7 @@ function RemoteCharacterBody(props: {
 
     if (props.actions.length === 0) {
       setPosition(props.x, props.y);
+      setVisual(props.currentAnimation, props.facing);
       return;
     }
 
@@ -1798,6 +2156,7 @@ function RemoteCharacterBody(props: {
 
       if (elapsed >= lastAction.timeSinceBatchStart) {
         setPosition(lastAction.x, lastAction.y);
+        setVisual(lastAction.animationName, lastAction.facing);
         activeBatch = null;
         activeBatchIndex = -1;
         return;
@@ -1820,13 +2179,17 @@ function RemoteCharacterBody(props: {
       const startY = previousAction?.y ?? activeBatchStartY;
 
       setPosition(lerp(startX, nextAction.x, amount), lerp(startY, nextAction.y, amount));
+      setVisual(
+        previousAction?.animationName ?? nextAction.animationName,
+        previousAction?.facing ?? nextAction.facing
+      );
     },
   });
 
   return (
     <div
       ref={rootRef}
-      class="pointer-events-none absolute"
+      class="absolute"
       style={{
         left: "0",
         top: "0",
@@ -1838,9 +2201,10 @@ function RemoteCharacterBody(props: {
       }}
     >
       <div
-        class="absolute inset-0 rounded-[14px] border border-black/30 shadow-[0_10px_30px_rgba(0,0,0,0.28)]"
+        ref={spriteRef}
+        class="absolute inset-0 bg-center bg-no-repeat bg-size-[100%] [image-rendering:pixelated]"
         style={{
-          background: `linear-gradient(180deg, ${props.color}, color-mix(in srgb, ${props.color} 70%, #0f0907))`,
+          "transform-origin": "center center",
         }}
       />
       <div class="absolute inset-x-0 -top-6 flex justify-center">
@@ -1853,6 +2217,9 @@ function RemoteCharacterBody(props: {
 }
 
 function CharacterBody(props: {
+  characterSprite: string;
+  currentAnimation: string;
+  facing: CharacterFacing;
   x: number;
   y: number;
   width: number;
@@ -1860,6 +2227,10 @@ function CharacterBody(props: {
   color: string;
   label: string;
 }) {
+  const animationUrl = createMemo(() =>
+    getCharacterActionUrl(props.characterSprite, props.currentAnimation)
+  );
+
   return (
     <div
       class="pointer-events-none absolute"
@@ -1873,12 +2244,18 @@ function CharacterBody(props: {
         "z-index": 40,
       }}
     >
-      <div
-        class="absolute inset-0 rounded-[14px] border border-black/30 shadow-[0_10px_30px_rgba(0,0,0,0.28)]"
-        style={{
-          background: `linear-gradient(180deg, ${props.color}, color-mix(in srgb, ${props.color} 70%, #0f0907))`,
-        }}
-      />
+      <Show when={animationUrl()}>
+        {(url) => (
+          <div
+            class="absolute inset-0 bg-center bg-no-repeat bg-size-[100%] [image-rendering:pixelated]"
+            style={{
+              "background-image": `url(${url()})`,
+              transform: props.facing === "left" ? "scaleX(-1)" : "scaleX(1)",
+              "transform-origin": "center center",
+            }}
+          />
+        )}
+      </Show>
       <div class="absolute inset-x-0 -top-6 flex justify-center">
         <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
           {props.label}

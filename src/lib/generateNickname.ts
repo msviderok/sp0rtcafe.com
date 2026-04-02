@@ -12,7 +12,7 @@ type ModeParts = {
   suffixes: NamePart[];
 };
 
-type GeneratedUsername = {
+export type GeneratedNickname = {
   mode: Mode;
   full: string;
   short: string;
@@ -20,7 +20,7 @@ type GeneratedUsername = {
 
 const MODES: Mode[] = ["cursed", "village", "gamer"];
 
-function pick<T>(arr: T[]): T {
+function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
@@ -69,7 +69,6 @@ const parts: Record<Mode, ModeParts> = {
       { full: "ЗНульовимПінгом", short: "0Пнг" },
     ],
   },
-
   village: {
     prefixes: [
       { full: "Ґазда", short: "Ґаз" },
@@ -119,7 +118,6 @@ const parts: Record<Mode, ModeParts> = {
       { full: "ЗЧасником", short: "Часн" },
     ],
   },
-
   gamer: {
     prefixes: [
       { full: "Про", short: "Про" },
@@ -178,42 +176,78 @@ function resolveMode(mode: RequestedMode | string): Mode {
   return pick(MODES);
 }
 
-export function createFunnyUkrainianUsername(
-  mode: RequestedMode | string = "mixed"
-): GeneratedUsername {
-  const separators = ["", "_"];
+export function createShortNickname(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Player";
+  }
+
+  const compact = trimmed.replace(/\s+/g, "");
+  if (compact.length <= 14) {
+    return compact;
+  }
+
+  const words = trimmed
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  if (words.length > 1) {
+    const initialism = words.map((word) => [...word][0] ?? "").join("");
+    if (initialism.length >= 2 && initialism.length <= 14) {
+      return initialism;
+    }
+
+    const joined = words.slice(0, 2).join("");
+    if (joined.length <= 14) {
+      return joined;
+    }
+  }
+
+  return [...compact].slice(0, 14).join("");
+}
+
+export function generateNickname(mode: RequestedMode | string = "mixed"): GeneratedNickname {
+  const separators = ["", "_"] as const;
   const actualMode = resolveMode(mode);
   const data = parts[actualMode];
 
   const prefix = pick(data.prefixes);
   const core = pick(data.cores);
   const suffix = pick(data.suffixes);
-  const sep = pick(separators);
+  const separator = pick(separators);
 
   return {
     mode: actualMode,
-    full: `${prefix.full}${sep}${core.full}${sep}${suffix.full}`,
-    short: `${prefix.short}${sep}${core.short}${sep}${suffix.short}`,
+    full: `${prefix.full}${separator}${core.full}${separator}${suffix.full}`,
+    short: `${prefix.short}${separator}${core.short}${separator}${suffix.short}`,
   };
 }
 
-export function generateFunnyUkrainianUsernames(
+export function deriveNicknameFromIdentity(name: string | null | undefined, email: string) {
+  const base =
+    name?.trim() ||
+    email
+      .split("@")[0]
+      .replace(/[._-]+/g, " ")
+      .trim() ||
+    "Player";
+
+  return {
+    full: base,
+    short: createShortNickname(base),
+  };
+}
+
+export function generateUniqueNicknames(
   count = 100,
-  mode: RequestedMode | string = "mixed"
-): GeneratedUsername[] {
-  const result = new Map<string, GeneratedUsername>();
+  mode: RequestedMode | string = "mixed",
+): GeneratedNickname[] {
+  const result = new Map<string, GeneratedNickname>();
 
   while (result.size < count) {
-    const item = createFunnyUkrainianUsername(mode);
+    const item = generateNickname(mode);
     result.set(item.full, item);
   }
 
   return [...result.values()];
 }
-
-// Example usage:
-const one = createFunnyUkrainianUsername("village");
-console.log(one);
-
-const many = generateFunnyUkrainianUsernames(20, "mixed");
-console.log(many);

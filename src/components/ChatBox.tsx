@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { useConvexClerkAuth } from "../integrations/convex-clerk";
+import { useCurrentUserBootstrap } from "../integrations/current-user-bootstrap";
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const DEFAULT_MESSAGE_DOT_COLOR = "rgba(255, 255, 255, 0.35)";
@@ -31,6 +32,7 @@ function formatRelativeTime(timestamp: number) {
 
 export default function ChatBox() {
   const convexAuth = useConvexClerkAuth();
+  const currentUserBootstrap = useCurrentUserBootstrap();
   const messagesQuery = useQuery(api.chat.list, {});
   const sendMessage = useMutation(api.chat.send);
   const [isOpen, setIsOpen] = createSignal(true);
@@ -167,34 +169,43 @@ export default function ChatBox() {
                   </div>
                 }
               >
-                <form class="space-y-2" onSubmit={handleSubmit}>
-                  <div class="flex items-center gap-2">
-                    <input
-                      class="min-w-0 flex-1 rounded-[4px] border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
-                      maxLength={500}
-                      onInput={(event) => {
-                        setBody(event.currentTarget.value);
-                        if (errorMessage()) {
-                          setErrorMessage(null);
-                        }
-                      }}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      placeholder="Say something..."
-                      type="text"
-                      value={body()}
-                    />
-                    <button
-                      class="rounded-[4px] border border-white/15 bg-white/10 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:text-white/35"
-                      disabled={!canSend()}
-                      type="submit"
-                    >
-                      {isSending() ? "..." : "Send"}
-                    </button>
-                  </div>
-                  <Show when={errorMessage()}>
-                    {(message) => <div class="text-[10px] text-[#ffb4b4]">{message()}</div>}
-                  </Show>
-                </form>
+                <Show
+                  when={currentUserBootstrap.isReady()}
+                  fallback={
+                    <div class="text-xs uppercase tracking-[0.22em] text-white/35">
+                      Preparing profile
+                    </div>
+                  }
+                >
+                  <form class="space-y-2" onSubmit={handleSubmit}>
+                    <div class="flex items-center gap-2">
+                      <input
+                        class="min-w-0 flex-1 rounded-[4px] border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
+                        maxLength={500}
+                        onInput={(event) => {
+                          setBody(event.currentTarget.value);
+                          if (errorMessage()) {
+                            setErrorMessage(null);
+                          }
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        placeholder="Say something..."
+                        type="text"
+                        value={body()}
+                      />
+                      <button
+                        class="rounded-[4px] border border-white/15 bg-white/10 px-3 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:text-white/35"
+                        disabled={!canSend()}
+                        type="submit"
+                      >
+                        {isSending() ? "..." : "Send"}
+                      </button>
+                    </div>
+                    <Show when={errorMessage()}>
+                      {(message) => <div class="text-[10px] text-[#ffb4b4]">{message()}</div>}
+                    </Show>
+                  </form>
+                </Show>
               </Show>
             </Show>
           </footer>

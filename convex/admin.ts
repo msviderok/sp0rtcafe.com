@@ -22,9 +22,13 @@ export const getCurrentAccess = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     const profile = await getUserProfileByEmail(ctx, identity?.email);
+    const isAdmin = profile?.isAdmin ?? false;
+    const isCharacterPrivileged = profile?.isCharacterPrivileged ?? false;
 
     return {
-      isAdmin: profile?.isAdmin ?? false,
+      isAdmin,
+      isCharacterPrivileged,
+      canSelectCharacter: isAdmin || isCharacterPrivileged,
     };
   },
 });

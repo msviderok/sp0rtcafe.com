@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getUserProfileByEmail } from "./userProfiles";
+import { ensureCurrentUserProfile } from "./userProfiles";
 
 export const list = query({
   args: {},
@@ -29,7 +29,7 @@ export const send = mutation({
       throw new Error("Message too long");
     }
 
-    const profile = await getUserProfileByEmail(ctx, identity.email);
+    const profile = await ensureCurrentUserProfile(ctx);
 
     return await ctx.db.insert("chatMessages", {
       body,

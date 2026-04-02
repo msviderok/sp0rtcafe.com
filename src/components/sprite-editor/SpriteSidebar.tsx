@@ -15,6 +15,10 @@ function getFileFingerprint(file: Pick<File, 'name' | 'size' | 'lastModified'>) 
 	return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
+function spriteKeyFromFileName(fileName: string) {
+	return fileName.replace(/\.[^.]+$/, '');
+}
+
 function getFileDimensions(file: File): Promise<{ width: number; height: number }> {
 	return new Promise((resolve, reject) => {
 		const objectUrl = URL.createObjectURL(file);
@@ -115,28 +119,27 @@ export default function SpriteSidebar(props: {
 	const sprites = useQuery(api.sprites.list, {});
 	const syncFiles = useMutation(api.files.upsertUploadThingFiles);
 	const syncUploadedSprites = useMutation(api.files.syncUploadedImagesToSprites);
-	const activeUploads = useQuery(api.files.listActiveUploads, {});
 	const radioState = useQuery(api.radio.getStateWithFiles, {});
 	const ensureAutoplayState = useMutation(api.radio.ensureAutoplayState);
 	const previousRadioTrack = useMutation(api.radio.previousTrack);
 	const pauseRadio = useMutation(api.radio.pause);
 	const resumeRadio = useMutation(api.radio.resume);
 	const nextRadioTrack = useMutation(api.radio.advanceTrack);
+	const createSprite = useMutation(api.sprites.create);
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [audioErrorMessage, setAudioErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
 	const [isUploadingAudio, setIsUploadingAudio] = createSignal(false);
-	const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
 	const [isScenesSectionOpen, setIsScenesSectionOpen] = createSignal(false);
 	const [isAssetsSectionOpen, setIsAssetsSectionOpen] = createSignal(true);
 	const [isAudioSectionOpen, setIsAudioSectionOpen] = createSignal(false);
+	const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
 	let fileInputRef: HTMLInputElement | undefined;
 	let audioFileInputRef: HTMLInputElement | undefined;
 
 	const sortedSprites = createMemo(() =>
 		[...(sprites.data() ?? [])].sort((left, right) => left.key.localeCompare(right.key)),
 	);
-	const visibleUploads = createMemo(() => activeUploads.data() ?? []);
 	const selectedScene = createMemo(() => props.scenes.find((scene) => scene._id === props.selectedSceneId) ?? null);
 
 	onMount(() => {
@@ -183,7 +186,7 @@ export default function SpriteSidebar(props: {
 
 		await syncFiles.mutate({
 			files: files.map(compactUploadRecord),
-			createSprites: true,
+			createSprites: false,
 		});
 	};
 
@@ -213,141 +216,40 @@ export default function SpriteSidebar(props: {
 				}),
 			);
 
-			const lastSyncedProgress = new Map<string, number>();
+			const createRequests: Promise<unknown>[] = [];
 
 			await uploadThing.uploadFiles('imageUploader', {
 				files: imageFiles,
 				onEvent: (uploadEvent) => {
-					if (uploadEvent.type === 'presigned-received') {
-						void syncUploadBatch(
-							uploadEvent.files
-								.filter((file) => file.key)
-								.map((file) => {
-									const metadata = imageMetadata.get(getFileFingerprint(file));
-
-									return {
-										uploadThingKey: file.key!,
-										fileName: file.name,
-										status: 'pending' as const,
-										progress: 0,
-										size: file.size,
-										mimeType: file.type || undefined,
-										width: metadata?.width,
-										height: metadata?.height,
-									};
-								}),
-						);
-						return;
-					}
-
-					if (uploadEvent.type === 'upload-started') {
+					if (uploadEvent.type === 'upload-completed') {
 						const metadata = imageMetadata.get(getFileFingerprint(uploadEvent.file));
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'uploading',
-								progress: 0,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								width: metadata?.width,
-								height: metadata?.height,
-							},
-						]);
-						return;
-					}
-
-					if (uploadEvent.type === 'upload-progress') {
-						const metadata = imageMetadata.get(getFileFingerprint(uploadEvent.file));
-						const nextProgress = Math.min(
-							99,
-							Math.max(1, Math.round((uploadEvent.file.sent / uploadEvent.file.size) * 100)),
-						);
-						const previousProgress = lastSyncedProgress.get(uploadEvent.file.key) ?? -1;
-
-						if (nextProgress - previousProgress < 5 && nextProgress !== 99) {
+						if (!metadata || !uploadEvent.file.url) {
+							setErrorMessage('missing metadata');
 							return;
 						}
 
-						lastSyncedProgress.set(uploadEvent.file.key, nextProgress);
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'uploading',
-								progress: nextProgress,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								width: metadata?.width,
-								height: metadata?.height,
-							},
-						]);
-						return;
-					}
-
-					if (uploadEvent.type === 'upload-completed') {
-						const metadata = imageMetadata.get(getFileFingerprint(uploadEvent.file));
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'uploaded',
-								progress: 100,
+						createRequests.push(
+							createSprite.mutate({
+								key: spriteKeyFromFileName(uploadEvent.file.name),
 								url: uploadEvent.file.url,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								uploadedAt: Date.now(),
-								width: metadata?.width,
-								height: metadata?.height,
-							},
-						]);
+								width: metadata.width,
+								height: metadata.height,
+							}),
+						);
 						return;
 					}
 
 					if (uploadEvent.type === 'upload-failed') {
-						const metadata = imageMetadata.get(getFileFingerprint(uploadEvent.file));
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'failed',
-								progress:
-									uploadEvent.file.size > 0 ? Math.round((uploadEvent.file.sent / uploadEvent.file.size) * 100) : 0,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								width: metadata?.width,
-								height: metadata?.height,
-								error: uploadEvent.file.reason.message,
-							},
-						]);
 						setErrorMessage('upload fail');
 						return;
 					}
 
 					if (uploadEvent.type === 'upload-aborted') {
-						void syncUploadBatch(
-							uploadEvent.files
-								.filter((file) => file.key)
-								.map((file) => {
-									const metadata = imageMetadata.get(getFileFingerprint(file));
-
-									return {
-										uploadThingKey: file.key!,
-										fileName: file.name,
-										status: 'failed' as const,
-										progress: file.size > 0 ? Math.round((file.sent / file.size) * 100) : 0,
-										size: file.size,
-										mimeType: file.type || undefined,
-										width: metadata?.width,
-										height: metadata?.height,
-										error: 'upload aborted',
-									};
-								}),
-						);
 						setErrorMessage('upload aborted');
 					}
 				},
 			});
+			await Promise.all(createRequests);
 		} catch {
 			setErrorMessage('upload fail');
 		} finally {
@@ -389,55 +291,27 @@ export default function SpriteSidebar(props: {
 			await uploadThing.uploadFiles('audioUploader', {
 				files: audioFilesSelected,
 				onEvent: (uploadEvent) => {
-					if (uploadEvent.type === 'presigned-received') {
-						void syncUploadBatch(
-							uploadEvent.files
-								.filter((file) => file.key)
-								.map((file) => {
-									const metadata = audioMetadata.get(getFileFingerprint(file));
-
-									return {
-										uploadThingKey: file.key!,
-										fileName: file.name,
-										status: 'pending' as const,
-										progress: 0,
-										size: file.size,
-										mimeType: file.type || undefined,
-										durationMs: metadata?.durationMs,
-									};
-								}),
-						);
-					} else if (uploadEvent.type === 'upload-completed') {
-						const metadata = audioMetadata.get(getFileFingerprint(uploadEvent.file));
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'uploaded',
-								progress: 100,
-								url: uploadEvent.file.url,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								uploadedAt: Date.now(),
-								durationMs: metadata?.durationMs,
-							},
-						]);
-					} else if (uploadEvent.type === 'upload-failed') {
-						const metadata = audioMetadata.get(getFileFingerprint(uploadEvent.file));
-						void syncUploadBatch([
-							{
-								uploadThingKey: uploadEvent.file.key,
-								fileName: uploadEvent.file.name,
-								status: 'failed',
-								progress: 0,
-								size: uploadEvent.file.size,
-								mimeType: uploadEvent.file.type || undefined,
-								durationMs: metadata?.durationMs,
-								error: uploadEvent.file.reason.message,
-							},
-						]);
-						setAudioErrorMessage('upload fail');
+					if (uploadEvent.type !== 'upload-completed') {
+						if (uploadEvent.type === 'upload-failed') {
+							setAudioErrorMessage('upload fail');
+						}
+						return;
 					}
+
+					const metadata = audioMetadata.get(getFileFingerprint(uploadEvent.file));
+					void syncUploadBatch([
+						{
+							uploadThingKey: uploadEvent.file.key,
+							fileName: uploadEvent.file.name,
+							status: 'uploaded',
+							progress: 100,
+							url: uploadEvent.file.url,
+							size: uploadEvent.file.size,
+							mimeType: uploadEvent.file.type || undefined,
+							uploadedAt: Date.now(),
+							durationMs: metadata?.durationMs,
+						},
+					]);
 				},
 			});
 		} catch {
@@ -667,36 +541,6 @@ export default function SpriteSidebar(props: {
 									<div class="flex flex-col gap-0.5">
 										<For each={sortedSprites()}>
 											{(sprite) => <DraggableSprite sprite={sprite} />}
-										</For>
-									</div>
-								</Show>
-
-								<Show when={visibleUploads().length > 0}>
-									<div class="mt-2 flex flex-col gap-0.5">
-										<For each={visibleUploads()}>
-											{(file) => (
-												<div class="flex items-center gap-2.5 rounded-lg bg-muted/50 p-1.5">
-													<div
-														class="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted"
-														title={file.fileName}
-													>
-														<div
-															class="absolute inset-x-0 bottom-0 h-1 rounded-b bg-primary transition-[width] duration-150"
-															style={{ width: `${file.progress}%` }}
-														/>
-													</div>
-													<div class="min-w-0 flex-1">
-														<div class="truncate text-[11px] leading-tight text-foreground/50">{file.fileName}</div>
-														<div class="mt-0.5 text-[10px] text-muted-foreground">
-															{file.status === 'failed' ? (
-																<span class="text-destructive">failed</span>
-															) : (
-																`${file.progress}%`
-															)}
-														</div>
-													</div>
-												</div>
-											)}
 										</For>
 									</div>
 								</Show>

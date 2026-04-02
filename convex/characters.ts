@@ -8,10 +8,11 @@ import {
 } from "../src/lib/characterPhysics";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
-import { getUserProfileByEmail } from "./userProfiles";
+import { ensureCurrentUserProfile } from "./userProfiles";
 
 const ACTIVE_CHARACTER_WINDOW_MS = 15_000;
 const MAX_STORED_MOVEMENT_ACTIONS = 200;
+const characterFacingValidator = v.union(v.literal("left"), v.literal("right"));
 
 const characterSyncStateValidator = v.object({
   clientSequence: v.number(),
@@ -21,7 +22,13 @@ const characterSyncStateValidator = v.object({
   vy: v.number(),
   grounded: v.boolean(),
   timeSinceBatchStart: v.optional(v.number()),
+  animationName: v.optional(v.string()),
+  facing: v.optional(characterFacingValidator),
+  isRunning: v.optional(v.boolean()),
+  manualActionName: v.optional(v.union(v.string(), v.null())),
 });
+
+type CharacterFacing = "left" | "right";
 
 type CharacterSyncState = {
   clientSequence: number;
@@ -31,6 +38,10 @@ type CharacterSyncState = {
   vy: number;
   grounded: boolean;
   timeSinceBatchStart?: number;
+  animationName?: string;
+  facing?: CharacterFacing;
+  isRunning?: boolean;
+  manualActionName?: string | null;
 };
 
 type CharacterMovementAction = {
@@ -41,6 +52,10 @@ type CharacterMovementAction = {
   vy: number;
   grounded: boolean;
   timeSinceBatchStart: number;
+  animationName?: string;
+  facing?: CharacterFacing;
+  isRunning?: boolean;
+  manualActionName?: string | null;
 };
 
 type CharacterSyncBatchArgs = {
@@ -74,7 +89,30 @@ function getLatestCharacter(characters: Doc<"characters">[]) {
   return sortCharactersByRecency(characters)[0] ?? null;
 }
 
+function resolveFacing(
+  preferredFacing: CharacterFacing | undefined,
+  velocityX: number,
+  fallbackFacing: CharacterFacing | undefined,
+): CharacterFacing {
+  if (preferredFacing) {
+    return preferredFacing;
+  }
+
+  if (velocityX < 0) {
+    return "left";
+  }
+
+  if (velocityX > 0) {
+    return "right";
+  }
+
+  return fallbackFacing ?? "right";
+}
+
 function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier: string | null) {
+  const facing = resolveFacing(character.facing, character.vx, "right");
+  const currentAnimation = character.currentAnimation ?? "Idle";
+
   return {
     _id: character._id,
     _creationTime: character._creationTime,
@@ -82,15 +120,26 @@ function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier:
     sessionId: character.sessionId,
     active: character.active ?? false,
     nickname: character.nickname ?? null,
+    nicknameShort: character.nicknameShort ?? null,
     profileOptions: character.profileOptions ?? {},
-    actions: character.actions ?? [],
+    actions: (character.actions ?? []).map((action) => ({
+      ...action,
+      animationName: action.animationName ?? currentAnimation,
+      facing: resolveFacing(action.facing, action.vx, facing),
+      isRunning: action.isRunning ?? false,
+      manualActionName: action.manualActionName ?? null,
+    })),
     x: character.x,
     y: character.y,
     vx: character.vx,
     vy: character.vy,
-    width: character.width || CHARACTER_WIDTH,
-    height: character.height || CHARACTER_HEIGHT,
+    width: CHARACTER_WIDTH,
+    height: CHARACTER_HEIGHT,
     grounded: character.grounded ?? false,
+    currentAnimation,
+    facing,
+    isRunning: character.isRunning ?? false,
+    manualActionName: character.manualActionName ?? null,
     color: character.color || getCharacterColor(character.tokenIdentifier ?? character.sessionId),
     lastProcessedSequence: character.lastProcessedSequence,
     updatedAt: character.updatedAt,
@@ -109,7 +158,7 @@ function resolveCharacterColor(
   identity: {
     subject?: string | null;
     tokenIdentifier: string;
-  }
+  },
 ) {
   return (
     profile?.options?.color ??
@@ -129,7 +178,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
   const existingCharacters = await ctx.db
     .query("characters")
     .withIndex("by_sceneId_and_tokenIdentifier", (q) =>
-      q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier)
+      q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier),
     )
     .take(10);
   const existing = getLatestCharacter(existingCharacters);
@@ -155,7 +204,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     throw new Error("Scene not found");
   }
 
-  const profile = await getUserProfileByEmail(ctx, identity.email);
+  const profile = await ensureCurrentUserProfile(ctx);
 
   const sceneAssets = await ctx.db
     .query("sceneAssets")
@@ -179,7 +228,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
             .map((character) => ({
               x: character.x,
               y: character.y,
-            }))
+            })),
         )
       : {
           x: existing.x,
@@ -190,6 +239,10 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
         };
 
   let nextState = initialState;
+  let nextFacing = resolveFacing(existing?.facing, initialState.vx, "right");
+  let nextAnimation = existing?.currentAnimation ?? "Idle";
+  let nextIsRunning = existing?.isRunning ?? false;
+  let nextManualActionName = existing?.manualActionName ?? null;
   let lastProcessedSequence = existing?.lastProcessedSequence ?? -1;
   const acceptedActions: CharacterMovementAction[] = [];
 
@@ -208,8 +261,12 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
         vx: state.vx,
         vy: state.vy,
         grounded: state.grounded,
-      }
+      },
     );
+    nextFacing = resolveFacing(state.facing, nextState.vx, nextFacing);
+    nextAnimation = state.animationName ?? nextAnimation;
+    nextIsRunning = state.isRunning ?? false;
+    nextManualActionName = state.manualActionName ?? null;
     lastProcessedSequence = state.clientSequence;
     acceptedActions.push({
       kind: "movement",
@@ -219,6 +276,10 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
       vy: nextState.vy,
       grounded: nextState.grounded,
       timeSinceBatchStart: Math.max(0, state.timeSinceBatchStart ?? 0),
+      animationName: nextAnimation,
+      facing: nextFacing,
+      isRunning: nextIsRunning,
+      manualActionName: nextManualActionName,
     });
   }
 
@@ -235,16 +296,21 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     sessionId: args.sessionId,
     tokenIdentifier: identity.tokenIdentifier,
     active: true,
-    nickname: profile?.nickname,
-    profileOptions: profile?.options,
+    nickname: profile.nickname,
+    nicknameShort: profile.nicknameShort ?? createShortFallback(profile.nickname),
+    profileOptions: profile.options,
     actions: acceptedActions.slice(-MAX_STORED_MOVEMENT_ACTIONS),
     x: nextState.x,
     y: nextState.y,
     vx: nextState.vx,
     vy: nextState.vy,
-    width: existing?.width ?? CHARACTER_WIDTH,
-    height: existing?.height ?? CHARACTER_HEIGHT,
+    width: CHARACTER_WIDTH,
+    height: CHARACTER_HEIGHT,
     grounded: nextState.grounded,
+    currentAnimation: nextAnimation,
+    facing: nextFacing,
+    isRunning: nextIsRunning,
+    manualActionName: nextManualActionName,
     color: resolveCharacterColor(existing, profile, identity),
     lastProcessedSequence,
     updatedAt: now,
@@ -257,7 +323,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
         ...existing,
         ...patch,
       },
-      identity.tokenIdentifier
+      identity.tokenIdentifier,
     );
   }
 
@@ -268,7 +334,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
       _creationTime: now,
       ...patch,
     },
-    identity.tokenIdentifier
+    identity.tokenIdentifier,
   );
 }
 
@@ -288,7 +354,7 @@ export const setSocketPresence = mutation({
     const existingCharacters = await ctx.db
       .query("characters")
       .withIndex("by_sceneId_and_tokenIdentifier", (q) =>
-        q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier)
+        q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier),
       )
       .take(10);
     const existing = getLatestCharacter(existingCharacters);
@@ -304,13 +370,17 @@ export const setSocketPresence = mutation({
     const now = Date.now();
 
     if (args.active) {
-      const profile = await getUserProfileByEmail(ctx, identity.email);
+      const profile = await ensureCurrentUserProfile(ctx);
       const patch = {
         sessionId: args.sessionId,
         tokenIdentifier: identity.tokenIdentifier,
         active: true,
-        nickname: profile?.nickname ?? existing.nickname,
-        profileOptions: profile?.options ?? existing.profileOptions,
+        nickname: profile.nickname ?? existing.nickname,
+        nicknameShort:
+          profile.nicknameShort ?? existing.nicknameShort ?? createShortFallback(existing.nickname),
+        profileOptions: profile.options ?? existing.profileOptions,
+        width: CHARACTER_WIDTH,
+        height: CHARACTER_HEIGHT,
         color: resolveCharacterColor(existing, profile, identity),
         updatedAt: now,
       };
@@ -321,7 +391,7 @@ export const setSocketPresence = mutation({
           ...existing,
           ...patch,
         },
-        identity.tokenIdentifier
+        identity.tokenIdentifier,
       );
     }
 
@@ -336,10 +406,18 @@ export const setSocketPresence = mutation({
         ...existing,
         ...patch,
       },
-      identity.tokenIdentifier
+      identity.tokenIdentifier,
     );
   },
 });
+
+function createShortFallback(value: string | null | undefined) {
+  if (!value) {
+    return "Player";
+  }
+
+  return value.replace(/\s+/g, "").slice(0, 14) || "Player";
+}
 
 export const listByScene = query({
   args: {
@@ -354,7 +432,7 @@ export const listByScene = query({
         q
           .eq("sceneId", args.sceneId)
           .eq("active", true)
-          .gte("updatedAt", now - ACTIVE_CHARACTER_WINDOW_MS)
+          .gte("updatedAt", now - ACTIVE_CHARACTER_WINDOW_MS),
       )
       .order("desc")
       .take(100);
@@ -375,6 +453,10 @@ export const sync = mutation({
     vx: v.number(),
     vy: v.number(),
     grounded: v.boolean(),
+    animationName: v.optional(v.string()),
+    facing: v.optional(characterFacingValidator),
+    isRunning: v.optional(v.boolean()),
+    manualActionName: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     return syncCharacterStates(ctx, {
@@ -389,6 +471,10 @@ export const sync = mutation({
           vy: args.vy,
           grounded: args.grounded,
           timeSinceBatchStart: 0,
+          animationName: args.animationName,
+          facing: args.facing,
+          isRunning: args.isRunning,
+          manualActionName: args.manualActionName,
         },
       ],
     });

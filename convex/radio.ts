@@ -15,7 +15,7 @@ function isAudioTrackFile(file: Pick<Doc<"files">, "fileName" | "mimeType" | "st
 
 async function getPlayableTrackById(
   ctx: TrackLookupCtx,
-  fileId: Doc<"radioState">["currentTrackFileId"],
+  fileId: Doc<"radioState">["currentTrackFileId"]
 ) {
   if (!fileId) {
     return null;
@@ -43,7 +43,7 @@ async function findNextAudioTrack(ctx: TrackLookupCtx, afterFileName: string) {
   const query = ctx.db
     .query("files")
     .withIndex("by_status_and_fileName", (q) =>
-      q.eq("status", "uploaded").gt("fileName", afterFileName),
+      q.eq("status", "uploaded").gt("fileName", afterFileName)
     );
 
   for await (const file of query) {
@@ -74,7 +74,7 @@ async function findPreviousAudioTrack(ctx: TrackLookupCtx, beforeFileName: strin
   const query = ctx.db
     .query("files")
     .withIndex("by_status_and_fileName", (q) =>
-      q.eq("status", "uploaded").lt("fileName", beforeFileName),
+      q.eq("status", "uploaded").lt("fileName", beforeFileName)
     )
     .order("desc");
 
@@ -120,7 +120,7 @@ async function ensureAutoplayStateInternal(ctx: MutationCtx) {
   const state = await ensureState(ctx);
   const { currentFile: existingCurrentFile, nextFile: existingNextFile } = await getRadioTracks(
     ctx,
-    state,
+    state
   );
 
   const currentFile = existingCurrentFile ?? (await findFirstAudioTrack(ctx));
@@ -192,7 +192,7 @@ async function ensureAutoplayStateInternal(ctx: MutationCtx) {
 
   const { currentFile: patchedCurrentFile, nextFile: patchedNextFile } = await getRadioTracks(
     ctx,
-    nextState,
+    nextState
   );
 
   return {
@@ -206,7 +206,7 @@ async function ensureAutoplayStateInternal(ctx: MutationCtx) {
 function serializeStateWithTracks(
   state: Doc<"radioState">,
   currentFile: Doc<"files"> | null,
-  nextFile: Doc<"files"> | null,
+  nextFile: Doc<"files"> | null
 ) {
   return {
     ...state,
@@ -220,13 +220,16 @@ function serializeStateWithTracks(
 async function scheduleTrackAdvance(
   ctx: MutationCtx,
   state: Pick<Doc<"radioState">, "currentTrackFileId" | "startedAt" | "isPaused">,
-  currentFile: Doc<"files"> | null,
+  currentFile: Doc<"files"> | null
 ) {
   if (!currentFile?.durationMs || state.isPaused || state.startedAt === undefined) {
     return;
   }
 
-  const remainingMs = Math.max(0, currentFile.durationMs - Math.max(0, Date.now() - state.startedAt));
+  const remainingMs = Math.max(
+    0,
+    currentFile.durationMs - Math.max(0, Date.now() - state.startedAt)
+  );
 
   await ctx.scheduler.runAfter(remainingMs, api.radio.advanceTrack, {
     expectedCurrentFileId: currentFile._id,
