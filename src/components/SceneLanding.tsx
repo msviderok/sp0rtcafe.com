@@ -517,11 +517,12 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
         (character) => character.isCurrentUser
       ) ?? null
   );
-  const otherCharacters = createMemo(() =>
-    ((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
+  const otherCharacters = createMemo(() => {
+    console.log("characters", characters.data());
+    return ((characters.data() as SceneCharacter[] | undefined) ?? []).filter(
       (character) => !character.isCurrentUser
-    )
-  );
+    );
+  });
   const playerColor = createMemo(() => ownCharacter()?.color ?? fallbackPlayerColor());
   const playerLabel = createMemo(
     () => ownCharacter()?.nickname ?? currentProfile.data()?.nickname ?? "You"
@@ -535,6 +536,26 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let lastPresenceSentAt = 0;
   let batchStartedAt = Date.now();
   let pendingSyncStates: CharacterSyncState[] = [];
+  let queuedSyncStates: CharacterSyncState[] = [];
+  let activeSyncMutation: Promise<void> | null = null;
+  let syncRetryTimeoutId: number | undefined;
+  let syncGeneration = 0;
+
+  const clearSyncRetryTimeout = () => {
+    if (syncRetryTimeoutId === undefined) {
+      return;
+    }
+
+    window.clearTimeout(syncRetryTimeoutId);
+    syncRetryTimeoutId = undefined;
+  };
+
+  onCleanup(() => {
+    syncGeneration += 1;
+    queuedSyncStates = [];
+    activeSyncMutation = null;
+    clearSyncRetryTimeout();
+  });
 
   createEffect(() => {
     const currentUserId = userId();
@@ -573,6 +594,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
 
   createEffect(() => {
     props.sceneId;
+    syncGeneration += 1;
     activeLeft = false;
     activeRight = false;
     jumpQueued = false;
@@ -581,6 +603,9 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
     lastPresenceSentAt = 0;
     batchStartedAt = Date.now();
     pendingSyncStates = [];
+    queuedSyncStates = [];
+    activeSyncMutation = null;
+    clearSyncRetryTimeout();
     setPlayerState(null);
     cameraInitialized = false;
     setCameraX(0);
@@ -756,47 +781,95 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   });
 
   const flushMovementBatch = (states: CharacterSyncState[]) => {
-    const latestState = states[states.length - 1];
-
-    if (!latestState) {
+    if (states.length === 0) {
       return;
     }
 
-    void convex
-      .mutation(
-        api.characters.syncBatch,
-        {
-          sceneId: props.sceneId,
-          sessionId,
-          states,
-        },
-        {
-          optimisticUpdate: (localStore) => {
-            const current = localStore.getQuery(api.characters.listByScene, {
-              sceneId: props.sceneId,
-            }) as SceneCharacter[] | undefined;
-            const optimisticCharacter = createOptimisticCharacter(
-              current,
-              props.sceneId,
-              sessionId,
-              playerColor(),
-              states
-            );
+    queuedSyncStates = [...queuedSyncStates, ...states];
 
-            localStore.setQuery(
-              api.characters.listByScene,
-              { sceneId: props.sceneId },
-              [
-                ...(current ?? []).filter((character) => !character.isCurrentUser),
-                optimisticCharacter,
-              ].sort((left, right) => left._creationTime - right._creationTime)
-            );
+    if (activeSyncMutation) {
+      return;
+    }
+
+    const startQueuedMovementSync = () => {
+      if (activeSyncMutation || queuedSyncStates.length === 0) {
+        return;
+      }
+
+      clearSyncRetryTimeout();
+
+      const generation = syncGeneration;
+      const sceneId = props.sceneId;
+      const nextBatch = queuedSyncStates;
+      queuedSyncStates = [];
+
+      activeSyncMutation = convex
+        .mutation(
+          api.characters.syncBatch,
+          {
+            sceneId,
+            sessionId,
+            states: nextBatch,
           },
-        }
-      )
-      .catch((error) => {
-        console.error("character sync failed", error);
-      });
+          {
+            optimisticUpdate: (localStore) => {
+              const current = localStore.getQuery(api.characters.listByScene, {
+                sceneId,
+              }) as SceneCharacter[] | undefined;
+              const optimisticCharacter = createOptimisticCharacter(
+                current,
+                sceneId,
+                sessionId,
+                playerColor(),
+                nextBatch
+              );
+
+              localStore.setQuery(
+                api.characters.listByScene,
+                { sceneId },
+                [
+                  ...(current ?? []).filter((character) => !character.isCurrentUser),
+                  optimisticCharacter,
+                ].sort((left, right) => left._creationTime - right._creationTime)
+              );
+            },
+          }
+        )
+        .then(() => undefined)
+        .catch((error) => {
+          if (generation !== syncGeneration) {
+            return;
+          }
+
+          queuedSyncStates = [...nextBatch, ...queuedSyncStates];
+          console.error("character sync failed", error);
+
+          if (syncRetryTimeoutId !== undefined) {
+            return;
+          }
+
+          syncRetryTimeoutId = window.setTimeout(() => {
+            syncRetryTimeoutId = undefined;
+
+            if (generation !== syncGeneration) {
+              return;
+            }
+
+            startQueuedMovementSync();
+          }, MOVEMENT_BATCH_INTERVAL_MS);
+        })
+        .finally(() => {
+          activeSyncMutation = null;
+
+          if (generation !== syncGeneration || syncRetryTimeoutId !== undefined) {
+            return;
+          }
+
+          startQueuedMovementSync();
+        });
+    };
+
+    startQueuedMovementSync();
   };
 
   const queueMovementState = (nextState: CharacterState, now: number) => {

@@ -70,22 +70,6 @@ function sortCharactersByRecency(characters: Doc<"characters">[]) {
   });
 }
 
-function dedupeCharactersByUser(characters: Doc<"characters">[]) {
-  const latestByUser = new Map<string, Doc<"characters">>();
-
-  for (const character of sortCharactersByRecency(characters)) {
-    if (!character.tokenIdentifier) {
-      continue;
-    }
-
-    if (!latestByUser.has(character.tokenIdentifier)) {
-      latestByUser.set(character.tokenIdentifier, character);
-    }
-  }
-
-  return [...latestByUser.values()];
-}
-
 function getLatestCharacter(characters: Doc<"characters">[]) {
   return sortCharactersByRecency(characters)[0] ?? null;
 }
@@ -114,10 +98,7 @@ function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier:
   };
 }
 
-function getIdentityColorSeed(identity: {
-  subject?: string | null;
-  tokenIdentifier: string;
-}) {
+function getIdentityColorSeed(identity: { subject?: string | null; tokenIdentifier: string }) {
   return identity.subject ?? identity.tokenIdentifier;
 }
 
@@ -127,7 +108,7 @@ function resolveCharacterColor(
   identity: {
     subject?: string | null;
     tokenIdentifier: string;
-  },
+  }
 ) {
   return (
     profile?.options?.color ??
@@ -147,7 +128,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
   const existingCharacters = await ctx.db
     .query("characters")
     .withIndex("by_sceneId_and_tokenIdentifier", (q) =>
-      q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier),
+      q.eq("sceneId", args.sceneId).eq("tokenIdentifier", identity.tokenIdentifier)
     )
     .take(10);
   const existing = getLatestCharacter(existingCharacters);
@@ -179,28 +160,25 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
     .query("sceneAssets")
     .withIndex("by_sceneId", (q) => q.eq("sceneId", args.sceneId))
     .take(500);
-  const sceneCharacters = await ctx.db
+  const collisionSurfaces = getCollisionSurfaces(sceneAssets);
+  const now = Date.now();
+  const characters = await ctx.db
     .query("characters")
     .withIndex("by_sceneId_and_updatedAt", (q) => q.eq("sceneId", args.sceneId))
     .order("desc")
     .take(100);
-  const collisionSurfaces = getCollisionSurfaces(sceneAssets);
-  const now = Date.now();
-  const activeSceneCharacters = dedupeCharactersByUser(sceneCharacters).filter(
-    (character) =>
-      character.tokenIdentifier &&
-      character.tokenIdentifier !== identity.tokenIdentifier &&
-      now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS,
-  );
+
   const initialState =
     existing === null
       ? getSpawnState(
           { width: scene.width, height: scene.height },
           collisionSurfaces,
-          activeSceneCharacters.map((character) => ({
-            x: character.x,
-            y: character.y,
-          })),
+          characters
+            .filter((character) => character.tokenIdentifier !== identity.tokenIdentifier)
+            .map((character) => ({
+              x: character.x,
+              y: character.y,
+            }))
         )
       : {
           x: existing.x,
@@ -229,7 +207,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
         vx: state.vx,
         vy: state.vy,
         grounded: state.grounded,
-      },
+      }
     );
     lastProcessedSequence = state.clientSequence;
     acceptedActions.push({
@@ -277,7 +255,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
         ...existing,
         ...patch,
       },
-      identity.tokenIdentifier,
+      identity.tokenIdentifier
     );
   }
 
@@ -288,7 +266,7 @@ async function syncCharacterStates(ctx: MutationCtx, args: CharacterSyncBatchArg
       _creationTime: now,
       ...patch,
     },
-    identity.tokenIdentifier,
+    identity.tokenIdentifier
   );
 }
 
@@ -305,13 +283,7 @@ export const listByScene = query({
       .order("desc")
       .take(100);
 
-    return dedupeCharactersByUser(
-      characters.filter(
-        (character) =>
-          Boolean(character.tokenIdentifier) &&
-          now - character.updatedAt <= ACTIVE_CHARACTER_WINDOW_MS,
-      ),
-    )
+    return characters
       .map((character) => toPublicCharacter(character, identity?.tokenIdentifier ?? null))
       .sort((left, right) => left._creationTime - right._creationTime);
   },
