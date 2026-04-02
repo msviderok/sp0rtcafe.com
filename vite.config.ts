@@ -6,8 +6,6 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
-  console.log({ env });
-
   return {
     plugins: [
       solidStart({
@@ -15,7 +13,7 @@ export default defineConfig(({ mode }) => {
       }),
       tailwindcss(),
       nitro({
-        preset: "vercel-edge",
+        preset: "vercel",
       }),
     ],
     environments: {
