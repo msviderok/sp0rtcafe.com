@@ -52,6 +52,7 @@ export default function PlacedSprite(props: {
   collision: boolean;
   isCurrentlyPlaying?: boolean;
   isNextTrack?: boolean;
+  isVolumeControl?: boolean;
   canResizeFreely: boolean;
   selectionMode: "none" | "single" | "multi";
   actionsDisabled?: boolean;
@@ -66,6 +67,7 @@ export default function PlacedSprite(props: {
   onToggleCollision: () => void;
   onToggleCurrentlyPlaying: () => void;
   onToggleNextTrack: () => void;
+  onToggleVolumeControl: () => void;
   onToggleStyleEditor: () => void;
 }) {
   const cornerHandleClass =
@@ -201,6 +203,23 @@ export default function PlacedSprite(props: {
               }}
             >
               {props.isNextTrack ? "Up next" : "Up next"}
+            </button>
+
+            <button
+              class={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] transition",
+                props.isVolumeControl
+                  ? "border-amber-400/18 bg-amber-500/15 text-amber-200"
+                  : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/8 hover:text-white/90"
+              )}
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleVolumeControl();
+              }}
+            >
+              Vol ctrl
             </button>
 
             <div class="mx-0.5 h-3.5 w-px bg-white/10" />

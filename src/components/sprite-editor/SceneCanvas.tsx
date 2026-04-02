@@ -60,6 +60,7 @@ type DeletedAssetSnapshot = {
   bgSize?: string;
   isCurrentlyPlaying?: boolean;
   isNextTrack?: boolean;
+  isVolumeControl?: boolean;
   animRotationSpeed?: number;
 };
 
@@ -123,6 +124,7 @@ type CopiedAssetSnapshot = {
   bgSize?: string;
   isCurrentlyPlaying?: boolean;
   isNextTrack?: boolean;
+  isVolumeControl?: boolean;
   animRotationSpeed?: number;
 };
 
@@ -592,6 +594,7 @@ function CanvasWithScene(props: {
       collision?: boolean;
       isCurrentlyPlaying?: boolean;
       isNextTrack?: boolean;
+      isVolumeControl?: boolean;
       animRotationSpeed?: number;
     },
     view: LocalTransform
@@ -615,6 +618,7 @@ function CanvasWithScene(props: {
         bgSize: asset.bgSize,
         isCurrentlyPlaying: asset.isCurrentlyPlaying,
         isNextTrack: asset.isNextTrack,
+        isVolumeControl: asset.isVolumeControl,
         animRotationSpeed: asset.animRotationSpeed,
       },
     ]);
@@ -683,6 +687,7 @@ function CanvasWithScene(props: {
       bgSize?: string;
       isCurrentlyPlaying?: boolean;
       isNextTrack?: boolean;
+      isVolumeControl?: boolean;
       animRotationSpeed?: number;
     }
   ) => {
@@ -728,6 +733,9 @@ function CanvasWithScene(props: {
         ? { isCurrentlyPlaying: patch.isCurrentlyPlaying }
         : {}),
       ...(patch.isNextTrack !== undefined ? { isNextTrack: patch.isNextTrack } : {}),
+      ...(patch.isVolumeControl !== undefined
+        ? { isVolumeControl: patch.isVolumeControl }
+        : {}),
       ...(patch.animRotationSpeed !== undefined
         ? { animRotationSpeed: patch.animRotationSpeed }
         : {}),
@@ -950,6 +958,7 @@ function CanvasWithScene(props: {
           bgSize: asset.bgSize,
           isCurrentlyPlaying: asset.isCurrentlyPlaying,
           isNextTrack: asset.isNextTrack,
+          isVolumeControl: asset.isVolumeControl,
           animRotationSpeed: asset.animRotationSpeed,
         };
       });
@@ -1883,6 +1892,7 @@ function CanvasWithScene(props: {
                       collision={asset()!.collision ?? false}
                       isCurrentlyPlaying={asset()!.isCurrentlyPlaying ?? false}
                       isNextTrack={asset()!.isNextTrack ?? false}
+                      isVolumeControl={asset()!.isVolumeControl ?? false}
                       canResizeFreely={canAssetResizeFreely(asset()!)}
                       selectionMode={selectionMode()}
                       actionsDisabled={areSpriteActionsDisabled()}
@@ -2149,6 +2159,11 @@ function CanvasWithScene(props: {
                       onToggleNextTrack={() => {
                         void applyAssetPatch(asset()!, {
                           isNextTrack: !(asset()!.isNextTrack ?? false),
+                        });
+                      }}
+                      onToggleVolumeControl={() => {
+                        void applyAssetPatch(asset()!, {
+                          isVolumeControl: !(asset()!.isVolumeControl ?? false),
                         });
                       }}
                       onToggleStyleEditor={() => {

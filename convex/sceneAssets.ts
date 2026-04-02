@@ -24,7 +24,7 @@ function sortSceneAssetsByOrder<T extends { zIndex?: number; _creationTime: numb
   return [...assets].sort(
     (left, right) =>
       getAssetOrderValue(left) - getAssetOrderValue(right) ||
-      left._creationTime - right._creationTime,
+      left._creationTime - right._creationTime
   );
 }
 
@@ -60,12 +60,14 @@ export const listByScene = query({
           collision: asset.collision ?? false,
           sprite,
         };
-      }),
+      })
     );
 
     return assetsWithSprites
       .filter((asset) => asset !== null)
-      .sort((left, right) => left.zIndex - right.zIndex || left._creationTime - right._creationTime);
+      .sort(
+        (left, right) => left.zIndex - right.zIndex || left._creationTime - right._creationTime
+      );
   },
 });
 
@@ -132,6 +134,7 @@ export const update = mutation({
     bgSize: v.optional(v.string()),
     isCurrentlyPlaying: v.optional(v.boolean()),
     isNextTrack: v.optional(v.boolean()),
+    isVolumeControl: v.optional(v.boolean()),
     animRotationSpeed: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -157,6 +160,7 @@ export const update = mutation({
       bgSize?: string;
       isCurrentlyPlaying?: boolean;
       isNextTrack?: boolean;
+      isVolumeControl?: boolean;
       animRotationSpeed?: number;
     } = {};
 
@@ -202,6 +206,9 @@ export const update = mutation({
     if (args.isNextTrack !== undefined) {
       patch.isNextTrack = args.isNextTrack;
     }
+    if (args.isVolumeControl !== undefined) {
+      patch.isVolumeControl = args.isVolumeControl;
+    }
     if (args.animRotationSpeed !== undefined) {
       patch.animRotationSpeed = args.animRotationSpeed;
     }
@@ -244,6 +251,7 @@ export const restore = mutation({
     bgSize: v.optional(v.string()),
     isCurrentlyPlaying: v.optional(v.boolean()),
     isNextTrack: v.optional(v.boolean()),
+    isVolumeControl: v.optional(v.boolean()),
     animRotationSpeed: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -271,8 +279,9 @@ export const duplicate = mutation({
         bgSize: v.optional(v.string()),
         isCurrentlyPlaying: v.optional(v.boolean()),
         isNextTrack: v.optional(v.boolean()),
+        isVolumeControl: v.optional(v.boolean()),
         animRotationSpeed: v.optional(v.number()),
-      }),
+      })
     ),
   },
   handler: async (ctx, args) => {
@@ -307,9 +316,14 @@ export const duplicate = mutation({
         ...(asset.bgRepeat !== undefined ? { bgRepeat: asset.bgRepeat } : {}),
         ...(asset.bgPosition !== undefined ? { bgPosition: asset.bgPosition } : {}),
         ...(asset.bgSize !== undefined ? { bgSize: asset.bgSize } : {}),
-        ...(asset.isCurrentlyPlaying !== undefined ? { isCurrentlyPlaying: asset.isCurrentlyPlaying } : {}),
+        ...(asset.isCurrentlyPlaying !== undefined
+          ? { isCurrentlyPlaying: asset.isCurrentlyPlaying }
+          : {}),
         ...(asset.isNextTrack !== undefined ? { isNextTrack: asset.isNextTrack } : {}),
-        ...(asset.animRotationSpeed !== undefined ? { animRotationSpeed: asset.animRotationSpeed } : {}),
+        ...(asset.isVolumeControl !== undefined ? { isVolumeControl: asset.isVolumeControl } : {}),
+        ...(asset.animRotationSpeed !== undefined
+          ? { animRotationSpeed: asset.animRotationSpeed }
+          : {}),
       });
       insertedIds.push(assetId);
     }
@@ -324,7 +338,7 @@ export const reorder = mutation({
       v.object({
         assetId: v.id("sceneAssets"),
         zIndex: v.number(),
-      }),
+      })
     ),
   },
   handler: async (ctx, args) => {

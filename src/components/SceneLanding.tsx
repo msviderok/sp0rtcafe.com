@@ -68,6 +68,7 @@ type SceneAsset = {
   bgSize?: string;
   isCurrentlyPlaying?: boolean;
   isNextTrack?: boolean;
+  isVolumeControl?: boolean;
   animRotationSpeed?: number;
   sprite: {
     url: string;
@@ -82,6 +83,9 @@ const LAST_CHARACTER_STATE_KEY_PREFIX = "__sp0rtcafeLastCharacterState";
 const MOVEMENT_SAMPLE_INTERVAL_MS = 16;
 const MOVEMENT_BATCH_INTERVAL_MS = 50;
 const IDLE_PRESENCE_INTERVAL_MS = 5_000;
+const RADIO_VOLUME_STORAGE_KEY = "radio_volume";
+const RADIO_VOLUME_STEP = 0.05;
+const RADIO_VOLUME_DRAG_SENSITIVITY = 0.005;
 
 // Camera follow system
 const CAMERA_DEAD_ZONE_X = 0.05;
@@ -98,6 +102,27 @@ type CharacterSyncState = CharacterState & {
 type StoredCharacterSnapshot = CharacterState & {
   lastProcessedSequence: number;
 };
+
+function clampRadioVolume(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.min(1, Math.max(0, value));
+}
+
+function snapRadioVolume(value: number) {
+  return clampRadioVolume(Math.round(clampRadioVolume(value) / RADIO_VOLUME_STEP) * RADIO_VOLUME_STEP);
+}
+
+function readStoredRadioVolume() {
+  try {
+    const stored = Number.parseFloat(window.localStorage.getItem(RADIO_VOLUME_STORAGE_KEY) ?? "1");
+    return clampRadioVolume(stored);
+  } catch {
+    return 1;
+  }
+}
 
 function createSceneSessionUuid() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -537,6 +562,8 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const [viewportWidth, setViewportWidth] = createSignal(props.width);
   const [viewportHeight, setViewportHeight] = createSignal(props.height);
   const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
+  const [volume, setVolume] = createSignal(readStoredRadioVolume());
+  const [muted, setMuted] = createSignal(false);
   const initialConnectionState = convex.connectionState();
   const [socketConnected, setSocketConnected] = createSignal(
     initialConnectionState.isWebSocketConnected
@@ -571,6 +598,14 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let activeLeft = false;
   let activeRight = false;
   let jumpQueued = false;
+
+  createEffect(() => {
+    try {
+      window.localStorage.setItem(RADIO_VOLUME_STORAGE_KEY, String(clampRadioVolume(volume())));
+    } catch {
+      // Ignore storage failures; volume control remains in-memory.
+    }
+  });
 
   createEffect(() => {
     if (radioState.isLoading()) {
@@ -1244,6 +1279,19 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
                       trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
                     />
                   </Show>
+                  <Show when={asset.isVolumeControl}>
+                    <VolumeControlOverlay
+                      volume={volume()}
+                      muted={muted()}
+                      onDrag={(nextVolume) => {
+                        setMuted(false);
+                        setVolume(nextVolume);
+                      }}
+                      onToggleMute={() => {
+                        setMuted((current) => !current);
+                      }}
+                    />
+                  </Show>
                 </div>
               )}
             </For>
@@ -1283,6 +1331,8 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
         radioState={radioState.data() ?? null}
         isConnected={socketConnected()}
         onTrackEnded={handleTrackEnded}
+        volume={volume()}
+        muted={muted()}
       />
 
       <Show when={currentAccess.data()?.isAdmin}>
@@ -1342,6 +1392,83 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   );
 }
 
+function VolumeControlOverlay(props: {
+  volume: number;
+  muted: boolean;
+  onDrag: (volume: number) => void;
+  onToggleMute: () => void;
+}) {
+  let activePointerId: number | null = null;
+  let startY = 0;
+  let startVolume = 1;
+
+  const resetDrag = () => {
+    activePointerId = null;
+  };
+
+  const volumeLabel = createMemo(() => {
+    if (props.muted) {
+      return "MUTE";
+    }
+
+    return `VOL ${Math.round(clampRadioVolume(props.volume) * 100)}`;
+  });
+
+  return (
+    <div
+      class="absolute inset-0 cursor-ns-resize select-none"
+      style={{ "touch-action": "none" }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        activePointerId = event.pointerId;
+        startY = event.clientY;
+        startVolume = props.volume;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+
+        event.preventDefault();
+        const deltaY = startY - event.clientY;
+        props.onDrag(snapRadioVolume(startVolume + deltaY * RADIO_VOLUME_DRAG_SENSITIVITY));
+      }}
+      onPointerUp={(event) => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+
+        event.preventDefault();
+        resetDrag();
+      }}
+      onPointerCancel={(event) => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+
+        resetDrag();
+      }}
+      onLostPointerCapture={() => {
+        resetDrag();
+      }}
+      onDblClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        props.onToggleMute();
+      }}
+    >
+      <div class="absolute inset-0 border border-white/10 bg-black/12" />
+      <div class="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+        <div class="rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/80 backdrop-blur-sm">
+          {volumeLabel()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RadioPlayer(props: {
   radioState: {
     currentTrackFileId?: Id<"files">;
@@ -1352,6 +1479,8 @@ function RadioPlayer(props: {
   } | null;
   isConnected?: boolean;
   onTrackEnded?: () => void;
+  volume: number;
+  muted: boolean;
 }) {
   let audioRef: HTMLAudioElement | undefined;
   const [autoplayBlocked, setAutoplayBlocked] = createSignal(false);
@@ -1507,6 +1636,15 @@ function RadioPlayer(props: {
     }, 1000);
 
     onCleanup(() => clearInterval(interval));
+  });
+
+  createEffect(() => {
+    if (!audioRef) {
+      return;
+    }
+
+    audioRef.volume = clampRadioVolume(props.volume);
+    audioRef.muted = props.muted;
   });
 
   return (

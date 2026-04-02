@@ -20,6 +20,7 @@
     "@solidjs/start": "2.0.0-alpha.2",
     "@solidjs/vite-plugin-nitro-2": "^0.1.0",
     "@tanstack/solid-hotkeys": "^0.9.1",
+    "@tanstack/solid-virtual": "^3.13.23",
     "@uploadthing/solid": "^7.3.3",
     "class-variance-authority": "^0.7.1",
     "clerk-solidjs": "^2.0.10",

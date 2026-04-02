@@ -81,6 +81,7 @@ export default defineSchema({
     bgSize: v.optional(v.string()),
     isCurrentlyPlaying: v.optional(v.boolean()),
     isNextTrack: v.optional(v.boolean()),
+    isVolumeControl: v.optional(v.boolean()),
     animRotationSpeed: v.optional(v.number()),
   }).index("by_sceneId", ["sceneId"]),
 
