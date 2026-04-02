@@ -741,8 +741,8 @@ function LandingSceneCanvas(props: {
   );
   const [cameraX, setCameraX] = createSignal(0);
   const [cameraY, setCameraY] = createSignal(0);
-  const [viewportWidth, setViewportWidth] = createSignal(props.width);
-  const [viewportHeight, setViewportHeight] = createSignal(props.height);
+  const [availableWidth, setAvailableWidth] = createSignal(props.width);
+  const [availableHeight, setAvailableHeight] = createSignal(props.height);
   const [hasAttemptedAutoplaySeed, setHasAttemptedAutoplaySeed] = createSignal(false);
   const [volume, setVolume] = createSignal(readStoredRadioVolume());
   const [muted, setMuted] = createSignal(false);
@@ -805,6 +805,20 @@ function LandingSceneCanvas(props: {
       slot: index + 1,
     }))
   );
+  const viewportScale = createMemo(() => {
+    const width = availableWidth();
+    const height = availableHeight();
+
+    if (width <= 0 || height <= 0) {
+      return 1;
+    }
+
+    return Math.max(0, Math.min(width / props.width, height / props.height));
+  });
+  const viewportWidth = () => props.width;
+  const viewportHeight = () => props.height;
+  const displayedViewportWidth = createMemo(() => viewportWidth() * viewportScale());
+  const displayedViewportHeight = createMemo(() => viewportHeight() * viewportScale());
   const currentAnimationState = createMemo(() => {
     const state = playerState();
     const characterId = selectedCharacterId();
@@ -1141,8 +1155,8 @@ function LandingSceneCanvas(props: {
       const entry = entries[0];
       if (!entry) return;
       const { width, height } = entry.contentRect;
-      setViewportWidth(Math.min(Math.floor(width), props.width));
-      setViewportHeight(Math.min(Math.floor(height), props.height));
+      setAvailableWidth(Math.floor(width));
+      setAvailableHeight(Math.floor(height));
     });
 
     ro.observe(el);
@@ -1630,159 +1644,166 @@ function LandingSceneCanvas(props: {
 
       {/* Outer container — fills remaining space, watched by ResizeObserver */}
       <div ref={containerRef} class="flex min-h-0 flex-1 items-center justify-center p-3">
-        {/* Scene viewport — clipped to scene/viewport size */}
         <div
-          class="relative overflow-hidden rounded-[4px] border border-white/10 bg-[#1e1512]"
+          class="relative"
           style={{
-            width: `${viewportWidth()}px`,
-            height: `${viewportHeight()}px`,
+            width: `${displayedViewportWidth()}px`,
+            height: `${displayedViewportHeight()}px`,
           }}
         >
-          {/* World — positioned by camera translate */}
           <div
-            class="absolute"
+            class="absolute left-0 top-0 origin-top-left overflow-hidden rounded-[4px] border border-white/10 bg-[#1e1512]"
             style={{
-              width: `${props.width}px`,
-              height: `${props.height}px`,
-              transform: `translate3d(${-cameraX()}px, ${-cameraY()}px, 0)`,
+              width: `${viewportWidth()}px`,
+              height: `${viewportHeight()}px`,
+              transform: `scale(${viewportScale()})`,
               "will-change": "transform",
             }}
           >
-            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
-
-            <Show
-              when={!assets.isLoading()}
-              fallback={
-                <div class="absolute left-6 top-6 text-sm text-muted-foreground">
-                  Loading scene...
-                </div>
-              }
+            {/* World — positioned by camera translate */}
+            <div
+              class="absolute"
+              style={{
+                width: `${props.width}px`,
+                height: `${props.height}px`,
+                transform: `translate3d(${-cameraX()}px, ${-cameraY()}px, 0)`,
+                "will-change": "transform",
+              }}
             >
-              <For each={(assets.data() ?? []) as SceneAsset[]}>
-                {(asset) => (
-                  <div
-                    class="absolute [image-rendering:pixelated]"
-                    style={{
-                      left: `${asset.x}px`,
-                      top: `${asset.y}px`,
-                      width: `${asset.width}px`,
-                      height: `${asset.height}px`,
-                      transform: asset.animRotationSpeed
-                        ? undefined
-                        : `rotate(${asset.rotation ?? 0}deg)`,
-                      animation: asset.animRotationSpeed
-                        ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
-                        : undefined,
-                      "animation-direction":
-                        (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
-                      "transform-origin": "center center",
-                    }}
-                  >
-                    {isTextSprite(asset.sprite) ? (
-                      <div
-                        class="absolute inset-0 select-none"
-                        style={{
-                          ...getTextSpriteStyle(asset.sprite.text, asset.width, asset.height),
-                          opacity: String(asset.opacity ?? 1),
-                        }}
-                      >
-                        {asset.sprite.text}
-                      </div>
-                    ) : (
-                      <div
-                        class="absolute inset-0"
-                        style={{
-                          "background-image": `url(${asset.sprite.url})`,
-                          "background-repeat":
-                            asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
-                          ...((asset.bgPosition ?? asset.sprite.bgPosition)
-                            ? {
-                                "background-position": asset.bgPosition ?? asset.sprite.bgPosition,
-                              }
-                            : {}),
-                          "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
-                          opacity: String(asset.opacity ?? 1),
-                        }}
-                      />
-                    )}
-                    <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
-                      <CurrentlyPlayingOverlay
-                        trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
-                      />
-                    </Show>
-                    <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
-                      <NextTrackOverlay
-                        trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
-                      />
-                    </Show>
-                    <Show when={asset.isVolumeControl}>
-                      <VolumeControlOverlay
-                        volume={volume()}
-                        muted={muted()}
-                        onDrag={(nextVolume) => {
-                          setMuted(false);
-                          setVolume(nextVolume);
-                        }}
-                        onToggleMute={() => {
-                          setMuted((current) => !current);
-                        }}
-                      />
-                    </Show>
+              <div class="pointer-events-none absolute inset-x-0 bottom-0 h-56" />
+              <div class="pointer-events-none absolute inset-x-0 top-0 h-40" />
+
+              <Show
+                when={!assets.isLoading()}
+                fallback={
+                  <div class="absolute left-6 top-6 text-sm text-muted-foreground">
+                    Loading scene...
                   </div>
+                }
+              >
+                <For each={(assets.data() ?? []) as SceneAsset[]}>
+                  {(asset) => (
+                    <div
+                      class="absolute [image-rendering:pixelated]"
+                      style={{
+                        left: `${asset.x}px`,
+                        top: `${asset.y}px`,
+                        width: `${asset.width}px`,
+                        height: `${asset.height}px`,
+                        transform: asset.animRotationSpeed
+                          ? undefined
+                          : `rotate(${asset.rotation ?? 0}deg)`,
+                        animation: asset.animRotationSpeed
+                          ? `spin-asset ${360 / Math.abs(asset.animRotationSpeed)}s linear infinite`
+                          : undefined,
+                        "animation-direction":
+                          (asset.animRotationSpeed ?? 0) < 0 ? "reverse" : "normal",
+                        "transform-origin": "center center",
+                      }}
+                    >
+                      {isTextSprite(asset.sprite) ? (
+                        <div
+                          class="absolute inset-0 select-none"
+                          style={{
+                            ...getTextSpriteStyle(asset.sprite.text, asset.width, asset.height),
+                            opacity: String(asset.opacity ?? 1),
+                          }}
+                        >
+                          {asset.sprite.text}
+                        </div>
+                      ) : (
+                        <div
+                          class="absolute inset-0"
+                          style={{
+                            "background-image": `url(${asset.sprite.url})`,
+                            "background-repeat":
+                              asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
+                            ...((asset.bgPosition ?? asset.sprite.bgPosition)
+                              ? {
+                                  "background-position": asset.bgPosition ?? asset.sprite.bgPosition,
+                                }
+                              : {}),
+                            "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
+                            opacity: String(asset.opacity ?? 1),
+                          }}
+                        />
+                      )}
+                      <Show when={asset.isCurrentlyPlaying && radioState.data()?.currentTrackName}>
+                        <CurrentlyPlayingOverlay
+                          trackName={formatLandingTrackName(radioState.data()?.currentTrackName)}
+                        />
+                      </Show>
+                      <Show when={asset.isNextTrack && radioState.data()?.nextTrackName}>
+                        <NextTrackOverlay
+                          trackName={formatLandingTrackName(radioState.data()?.nextTrackName)}
+                        />
+                      </Show>
+                      <Show when={asset.isVolumeControl}>
+                        <VolumeControlOverlay
+                          volume={volume()}
+                          muted={muted()}
+                          onDrag={(nextVolume) => {
+                            setMuted(false);
+                            setVolume(nextVolume);
+                          }}
+                          onToggleMute={() => {
+                            setMuted((current) => !current);
+                          }}
+                        />
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </Show>
+
+              <For each={otherCharacters()}>
+                {(character, index) => (
+                  <RemoteCharacterBody
+                    characterSprite={character.profileOptions.characterSprite ?? null}
+                    currentAnimation={character.currentAnimation}
+                    facing={character.facing}
+                    label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
+                    color={character.color}
+                    x={character.x}
+                    y={character.y}
+                    width={character.width}
+                    height={character.height}
+                    actions={character.actions}
+                    lastProcessedSequence={character.lastProcessedSequence}
+                  />
                 )}
               </For>
-            </Show>
 
-            <For each={otherCharacters()}>
-              {(character, index) => (
-                <RemoteCharacterBody
-                  characterSprite={character.profileOptions.characterSprite ?? null}
-                  currentAnimation={character.currentAnimation}
-                  facing={character.facing}
-                  label={character.nicknameShort ?? character.nickname ?? `P${index() + 1}`}
-                  color={character.color}
-                  x={character.x}
-                  y={character.y}
-                  width={character.width}
-                  height={character.height}
-                  actions={character.actions}
-                  lastProcessedSequence={character.lastProcessedSequence}
+              <Show when={socketConnected() ? playerState() : null}>
+                {(state) => (
+                  <CharacterBody
+                    characterSprite={selectedCharacterId()}
+                    currentAnimation={currentAnimationState().currentAnimation}
+                    facing={currentAnimationState().facing}
+                    label={playerLabel()}
+                    color={playerColor()}
+                    x={state().x}
+                    y={state().y}
+                    width={CHARACTER_WIDTH}
+                    height={CHARACTER_HEIGHT}
+                  />
+                )}
+              </Show>
+            </div>
+
+            {/* Quick actions overlay — bottom center of the scene */}
+            <div class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+              <div class="pointer-events-auto">
+                <QuickActionsBar
+                  actions={quickActionHotkeys()}
+                  activeActionName={activeManualActionName()}
+                  isRunActive={currentAnimationState().isRunning}
+                  runAvailable={selectedCharacter()?.hasRun ?? false}
                 />
-              )}
-            </For>
-
-            <Show when={socketConnected() ? playerState() : null}>
-              {(state) => (
-                <CharacterBody
-                  characterSprite={selectedCharacterId()}
-                  currentAnimation={currentAnimationState().currentAnimation}
-                  facing={currentAnimationState().facing}
-                  label={playerLabel()}
-                  color={playerColor()}
-                  x={state().x}
-                  y={state().y}
-                  width={CHARACTER_WIDTH}
-                  height={CHARACTER_HEIGHT}
-                />
-              )}
-            </Show>
-          </div>
-          {/* end world div */}
-
-          {/* Quick actions overlay — bottom center of the scene */}
-          <div class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-            <div class="pointer-events-auto">
-              <QuickActionsBar
-                actions={quickActionHotkeys()}
-                activeActionName={activeManualActionName()}
-                isRunActive={currentAnimationState().isRunning}
-                runAvailable={selectedCharacter()?.hasRun ?? false}
-              />
+              </div>
             </div>
           </div>
         </div>
-        {/* end scene viewport div */}
       </div>
       {/* end outer container div */}
 
@@ -1796,7 +1817,7 @@ function LandingSceneCanvas(props: {
           <div
             class="mx-auto flex w-full flex-wrap items-center gap-3 rounded-[4px] border border-white/10 bg-black/30 px-4 py-3 backdrop-blur-sm"
             style={{
-              "max-width": `${viewportWidth()}px`,
+              "max-width": `${displayedViewportWidth()}px`,
             }}
           >
             <div class="text-[10px] uppercase tracking-[0.18em] text-white/40">Radio</div>
