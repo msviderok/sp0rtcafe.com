@@ -8,6 +8,9 @@ patchedDependencies:
   '@solidjs/start':
     hash: 153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba
     path: patches/@solidjs__start.patch
+  '@solidjs/vite-plugin-nitro-2':
+    hash: bd3627088ff7f21f656aba3bd92488946b2c0e529487c9f50a5a4cff7faaed2e
+    path: patches/@solidjs__vite-plugin-nitro-2.patch
 
 importers:
 
@@ -30,7 +33,7 @@ importers:
         version: 2.0.0-alpha.2(patch_hash=153ef11ed257e3155e89b0c18e95cd2869de0912df16548e35282798a04c1eba)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
       '@solidjs/vite-plugin-nitro-2':
         specifier: ^0.1.0
-        version: 0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
+        version: 0.1.0(patch_hash=bd3627088ff7f21f656aba3bd92488946b2c0e529487c9f50a5a4cff7faaed2e)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))
       '@tanstack/solid-hotkeys':
         specifier: ^0.9.1
         version: 0.9.1(solid-js@1.9.12)
@@ -5533,7 +5536,7 @@ snapshots:
       - crossws
       - supports-color
 
-  '@solidjs/vite-plugin-nitro-2@0.1.0(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
+  '@solidjs/vite-plugin-nitro-2@0.1.0(patch_hash=bd3627088ff7f21f656aba3bd92488946b2c0e529487c9f50a5a4cff7faaed2e)(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1))':
     dependencies:
       nitropack: 2.13.3(uploadthing@7.7.4(express@5.2.1)(h3@2.0.1-rc.4)(tailwindcss@4.2.2))
       vite: 7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)

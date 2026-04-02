@@ -1,2 +1,3 @@
 patchedDependencies:
   '@solidjs/start': patches/@solidjs__start.patch
+  '@solidjs/vite-plugin-nitro-2': patches/@solidjs__vite-plugin-nitro-2.patch

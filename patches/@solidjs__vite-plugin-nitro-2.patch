@@ -1,0 +1,59 @@
+diff --git a/dist/index.js b/dist/index.js
+index 9d826501613e46861a5eea23510484cf0decec72..47d9885c53aa622c4254513a9de7d373f17c8f10 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -85,9 +85,51 @@ export function nitroV2Plugin(nitroConfig) {
+                                 },
+                                 virtual: {
+                                     ...nitroConfig?.virtual,
+-                                    [virtualEntry]: `import { fromWebHandler } from 'h3'
+-                                  import handler from '${ssrEntryFile}'
+-                                  export default fromWebHandler(handler.fetch)`
++                                    [virtualEntry]: `import handler from '${ssrEntryFile}'
++
++                                  const bodylessMethods = new Set(['GET', 'HEAD'])
++                                  const hasRequest = typeof handler?.request === 'function'
++                                  const hasHandler = typeof handler?.handler === 'function'
++                                  const hasFetch = typeof handler?.fetch === 'function'
++
++                                  function getHeader(headers, name) {
++                                    if (!headers) return undefined
++                                    if (typeof headers.get === 'function') return headers.get(name) ?? undefined
++                                    return headers[name] ?? headers[name.toLowerCase()]
++                                  }
++
++                                  function getEventURL(event) {
++                                    if (event.url instanceof URL) return event.url
++                                    const proto = getHeader(event.req?.headers, 'x-forwarded-proto') === 'https' ? 'https' : 'http'
++                                    const host = getHeader(event.req?.headers, 'x-forwarded-host') || getHeader(event.req?.headers, 'host') || 'localhost'
++                                    return new URL(event.req?.url || '/', \`\${proto}://\${host}\`)
++                                  }
++
++                                  function normalizeEvent(event) {
++                                    if (!event.url) event.url = getEventURL(event)
++                                    return event
++                                  }
++
++                                  function createRequestInit(event) {
++                                    const method = event.req.method
++                                    const hasBody = !bodylessMethods.has(method) && event.req.body != null
++                                    return {
++                                      method,
++                                      headers: event.req.headers,
++                                      body: hasBody ? event.req.body : undefined,
++                                      ...(hasBody ? { duplex: 'half' } : {})
++                                    }
++                                  }
++
++                                  const resolvedHandler = hasRequest
++                                    ? (event) => handler.request(getEventURL(event).toString(), createRequestInit(event), event.context)
++                                    : hasHandler
++                                      ? (event) => handler.handler(normalizeEvent(event))
++                                      : hasFetch
++                                        ? (event) => handler.fetch(new Request(getEventURL(event), createRequestInit(event)))
++                                        : handler
++
++                                  export default resolvedHandler`
+                                 }
+                             };
+                             const nitro = await createNitro(resolvedNitroConfig);

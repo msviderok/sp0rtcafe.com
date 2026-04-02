@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       nitro({
         preset: "vercel",
+        externals: {
+          inline: ["@solidjs/start", "h3", "srvx", "rou3"],
+        },
       }),
     ],
     environments: {
