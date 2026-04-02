@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       nitro({
         preset: "vercel",
+        vercel: {
+          functions: {
+            runtime: "bun1.x",
+          },
+        },
       }),
     ],
     environments: {
