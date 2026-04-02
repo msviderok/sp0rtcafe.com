@@ -55,6 +55,38 @@ async function findNextAudioTrack(ctx: TrackLookupCtx, afterFileName: string) {
   return await findFirstAudioTrack(ctx);
 }
 
+async function findLastAudioTrack(ctx: TrackLookupCtx) {
+  const query = ctx.db
+    .query("files")
+    .withIndex("by_status_and_fileName", (q) => q.eq("status", "uploaded"))
+    .order("desc");
+
+  for await (const file of query) {
+    if (isAudioTrackFile(file)) {
+      return file;
+    }
+  }
+
+  return null;
+}
+
+async function findPreviousAudioTrack(ctx: TrackLookupCtx, beforeFileName: string) {
+  const query = ctx.db
+    .query("files")
+    .withIndex("by_status_and_fileName", (q) =>
+      q.eq("status", "uploaded").lt("fileName", beforeFileName),
+    )
+    .order("desc");
+
+  for await (const file of query) {
+    if (isAudioTrackFile(file)) {
+      return file;
+    }
+  }
+
+  return await findLastAudioTrack(ctx);
+}
+
 async function getRadioTracks(ctx: TrackLookupCtx, state: Doc<"radioState"> | null) {
   const currentFile = state ? await getPlayableTrackById(ctx, state.currentTrackFileId) : null;
   const nextFile = state ? await getPlayableTrackById(ctx, state.nextTrackFileId) : null;
@@ -128,7 +160,11 @@ async function ensureAutoplayStateInternal(ctx: MutationCtx) {
       patch.nextTrackFileId = nextFile?._id;
     }
 
-    if (currentChanged || state.startedAt === undefined) {
+    if (currentChanged) {
+      patch.startedAt = Date.now();
+      patch.pausePosition = undefined;
+      patch.isPaused = false;
+    } else if (!state.isPaused && state.startedAt === undefined) {
       patch.startedAt = Date.now();
       patch.pausePosition = undefined;
       patch.isPaused = false;
@@ -309,6 +345,10 @@ export const advanceTrack = mutation({
     expectedStartedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    if (args.expectedCurrentFileId === undefined && args.expectedStartedAt === undefined) {
+      await requireAdminAccess(ctx);
+    }
+
     const ensured = await ensureAutoplayStateInternal(ctx);
     const state = ensured.state;
     const currentFile = ensured.currentFile;
@@ -326,6 +366,39 @@ export const advanceTrack = mutation({
     }
 
     const newCurrentFile = nextFile ?? currentFile;
+    const newNextFile = newCurrentFile
+      ? await findNextAudioTrack(ctx, newCurrentFile.fileName)
+      : null;
+
+    await ctx.db.patch(state._id, {
+      currentTrackFileId: newCurrentFile?._id,
+      nextTrackFileId: newNextFile?._id,
+      startedAt: newCurrentFile ? Date.now() : undefined,
+      pausePosition: undefined,
+      isPaused: !newCurrentFile,
+      updatedAt: Date.now(),
+    });
+
+    const nextState = await ctx.db.get(state._id);
+    if (nextState) {
+      await scheduleTrackAdvance(ctx, nextState, newCurrentFile);
+    }
+  },
+});
+
+export const previousTrack = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminAccess(ctx);
+    const ensured = await ensureAutoplayStateInternal(ctx);
+    const state = ensured.state;
+    const currentFile = ensured.currentFile;
+
+    if (!currentFile) {
+      return;
+    }
+
+    const newCurrentFile = await findPreviousAudioTrack(ctx, currentFile.fileName);
     const newNextFile = newCurrentFile
       ? await findNextAudioTrack(ctx, newCurrentFile.fileName)
       : null;

@@ -524,6 +524,7 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   const radioState = useQuery(api.radio.getStateWithFiles, {});
   const currentAccess = useQuery(api.admin.getCurrentAccess, {});
   const ensureAutoplayState = useMutation(api.radio.ensureAutoplayState);
+  const previousRadioTrack = useMutation(api.radio.previousTrack);
   const pauseRadio = useMutation(api.radio.pause);
   const resumeRadio = useMutation(api.radio.resume);
   const advanceRadioTrack = useMutation(api.radio.advanceTrack);
@@ -1299,6 +1300,26 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
           </Show>
 
           <div class="flex items-center gap-1.5">
+            <button
+              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+              type="button"
+              onClick={() => {
+                void previousRadioTrack.mutate({});
+              }}
+            >
+              Prev
+            </button>
+
+            <button
+              class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
+              type="button"
+              onClick={() => {
+                void advanceRadioTrack.mutate({});
+              }}
+            >
+              Next
+            </button>
+
             <button
               class="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70 transition hover:bg-white/10 hover:text-white"
               type="button"

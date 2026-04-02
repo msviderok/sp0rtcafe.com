@@ -118,8 +118,10 @@ export default function SpriteSidebar(props: {
 	const activeUploads = useQuery(api.files.listActiveUploads, {});
 	const radioState = useQuery(api.radio.getStateWithFiles, {});
 	const ensureAutoplayState = useMutation(api.radio.ensureAutoplayState);
+	const previousRadioTrack = useMutation(api.radio.previousTrack);
 	const pauseRadio = useMutation(api.radio.pause);
 	const resumeRadio = useMutation(api.radio.resume);
+	const nextRadioTrack = useMutation(api.radio.advanceTrack);
 	const [errorMessage, setErrorMessage] = createSignal<string>();
 	const [audioErrorMessage, setAudioErrorMessage] = createSignal<string>();
 	const [isUploading, setIsUploading] = createSignal(false);
@@ -772,6 +774,26 @@ export default function SpriteSidebar(props: {
 											Next: {radioState.data()?.nextTrackName}
 										</div>
 									</Show>
+
+									<button
+										class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+										type="button"
+										onClick={() => {
+											void previousRadioTrack.mutate({});
+										}}
+									>
+										Prev
+									</button>
+
+									<button
+										class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
+										type="button"
+										onClick={() => {
+											void nextRadioTrack.mutate({});
+										}}
+									>
+										Next
+									</button>
 
 									<button
 										class="rounded-xl border border-border bg-background px-4 py-2 text-sm transition hover:bg-accent"
