@@ -17,6 +17,7 @@ import {
 } from "../lib/characterPhysics";
 import createGameLoop from "../lib/createGameLoop";
 import { getSpriteBackgroundStyle } from "../lib/sceneStyles";
+import ChatBox from "./ChatBox";
 
 type SceneCharacter = {
   _id: Id<"characters">;
@@ -501,6 +502,7 @@ export default function SceneLanding() {
           </Show>
         </Show>
       </div>
+      <ChatBox />
     </main>
   );
 }

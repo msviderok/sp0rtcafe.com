@@ -120,6 +120,13 @@ export default defineSchema({
     .index("by_sceneId_and_active_and_updatedAt", ["sceneId", "active", "updatedAt"])
     .index("by_sceneId_and_updatedAt", ["sceneId", "updatedAt"]),
 
+  chatMessages: defineTable({
+    body: v.string(),
+    tokenIdentifier: v.string(),
+    nickname: v.string(),
+    color: v.optional(v.string()),
+  }),
+
   userProfiles: defineTable({
     email: v.string(),
     normalizedEmail: v.string(),

@@ -10,6 +10,7 @@
 
 import type * as admin from "../admin.js";
 import type * as characters from "../characters.js";
+import type * as chat from "../chat.js";
 import type * as files from "../files.js";
 import type * as radio from "../radio.js";
 import type * as sceneAssets from "../sceneAssets.js";
@@ -26,6 +27,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   characters: typeof characters;
+  chat: typeof chat;
   files: typeof files;
   radio: typeof radio;
   sceneAssets: typeof sceneAssets;
