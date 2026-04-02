@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { useConvexClerkAuth } from "../integrations/convex-clerk";
 import { useCurrentUserBootstrap } from "../integrations/current-user-bootstrap";
+import { getReadableTextColor, withColorAlpha } from "../lib/userColors";
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const DEFAULT_MESSAGE_DOT_COLOR = "rgba(255, 255, 255, 0.35)";
@@ -103,27 +104,42 @@ export default function ChatBox(props: { onClose: () => void }) {
                 >
                   <div class="space-y-3 pb-1">
                     <For each={messages()}>
-                      {(message) => (
-                        <article class="space-y-0.5">
-                          <div class="flex items-center gap-2">
-                            <span
-                              class="h-2 w-2 shrink-0 rounded-full"
-                              style={{
-                                "background-color": message.color ?? DEFAULT_MESSAGE_DOT_COLOR,
-                              }}
-                            />
-                            <span class="text-[10px] font-medium text-white/80">{message.nickname}</span>
-                          </div>
-                          <time
-                            class="block pl-4 text-[9px] text-white/30"
-                            dateTime={new Date(message._creationTime).toISOString()}
-                            title={new Date(message._creationTime).toLocaleString()}
-                          >
-                            {formatRelativeTime(message._creationTime)}
-                          </time>
-                          <p class="break-words pl-4 text-sm text-white/70">{message.body}</p>
-                        </article>
-                      )}
+                      {(message) => {
+                        const nameColor = message.color ?? "#7dd3fc";
+                        const nameTextColor = getReadableTextColor(nameColor);
+
+                        return (
+                          <article class="space-y-0.5">
+                            <div class="flex items-center gap-2">
+                              <span
+                                class="h-2 w-2 shrink-0 rounded-full"
+                                style={{
+                                  "background-color": message.color ?? DEFAULT_MESSAGE_DOT_COLOR,
+                                  "box-shadow": `0 0 10px ${withColorAlpha(nameColor, 0.4)}`,
+                                }}
+                              />
+                              <span
+                                class="inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
+                                style={{
+                                  "background-color": nameColor,
+                                  color: nameTextColor,
+                                  "border-color": withColorAlpha(nameColor, 0.4),
+                                }}
+                              >
+                                <span class="truncate">{message.nickname}</span>
+                              </span>
+                            </div>
+                            <time
+                              class="block pl-4 text-[9px] text-white/30"
+                              dateTime={new Date(message._creationTime).toISOString()}
+                              title={new Date(message._creationTime).toLocaleString()}
+                            >
+                              {formatRelativeTime(message._creationTime)}
+                            </time>
+                            <p class="break-words pl-4 text-sm text-white/70">{message.body}</p>
+                          </article>
+                        );
+                      }}
                     </For>
                   </div>
                 </Show>

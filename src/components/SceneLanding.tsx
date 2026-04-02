@@ -30,6 +30,7 @@ import {
 } from "../lib/characterPhysics";
 import createGameLoop from "../lib/createGameLoop";
 import { getTextSpriteStyle, isTextSprite } from "../lib/textSprites";
+import { getReadableTextColor, withColorAlpha } from "../lib/userColors";
 import ChatBox from "./ChatBox";
 import CharacterPickerRail from "./scene/CharacterPickerRail";
 import QuickActionsBar from "./scene/QuickActionsBar";
@@ -408,6 +409,15 @@ function lerp(start: number, end: number, amount: number) {
   return start + (end - start) * amount;
 }
 
+function getUserNameplateStyle(color: string) {
+  return {
+    "background-color": color,
+    color: getReadableTextColor(color),
+    "border-color": withColorAlpha(color, 0.45),
+    "box-shadow": `0 8px 20px ${withColorAlpha(color, 0.28)}`,
+  };
+}
+
 function formatLandingTrackName(trackName?: string) {
   if (!trackName) {
     return undefined;
@@ -640,7 +650,7 @@ export default function SceneLanding() {
         />
 
         {/* Center: scene */}
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col justify-center items-center">
           <Show
             when={!convexAuth.isLoading()}
             fallback={<SceneLoadingCard label="Checking session" />}
@@ -1720,7 +1730,8 @@ function LandingSceneCanvas(props: {
                               asset.bgRepeat ?? asset.sprite.bgRepeat ?? "no-repeat",
                             ...((asset.bgPosition ?? asset.sprite.bgPosition)
                               ? {
-                                  "background-position": asset.bgPosition ?? asset.sprite.bgPosition,
+                                  "background-position":
+                                    asset.bgPosition ?? asset.sprite.bgPosition,
                                 }
                               : {}),
                             "background-size": asset.bgSize ?? asset.sprite.bgSize ?? "100% 100%",
@@ -2204,7 +2215,7 @@ function CurrentlyPlayingOverlay(props: { trackName?: string }) {
 
 function NextTrackOverlay(props: { trackName?: string }) {
   return (
-    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none">
+    <div class="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none font-pixel">
       <div class="rounded-full border border-white/10 bg-black/50 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/50 backdrop-blur-sm">
         Up next: {props.trackName ?? "—"}
       </div>
@@ -2248,6 +2259,7 @@ function RemoteCharacterBody(props: {
   actions: CharacterMovementAction[];
   lastProcessedSequence: number;
 }) {
+  const nameplateStyle = createMemo(() => getUserNameplateStyle(props.color));
   let rootRef: HTMLDivElement | undefined;
   let spriteRef: HTMLDivElement | undefined;
   let lastQueuedSequence: number | null = null;
@@ -2405,8 +2417,11 @@ function RemoteCharacterBody(props: {
           "transform-origin": "center center",
         }}
       />
-      <div class="absolute inset-x-0 top-35 flex justify-center">
-        <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
+      <div class="absolute inset-x-0 top-30 flex justify-center">
+        <div
+          class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] backdrop-blur-sm"
+          style={nameplateStyle()}
+        >
           {props.label}
         </div>
       </div>
@@ -2428,6 +2443,7 @@ function CharacterBody(props: {
   const animationUrl = createMemo(() =>
     getCharacterActionUrl(props.characterSprite, props.currentAnimation)
   );
+  const nameplateStyle = createMemo(() => getUserNameplateStyle(props.color));
 
   return (
     <div
@@ -2454,8 +2470,11 @@ function CharacterBody(props: {
           />
         )}
       </Show>
-      <div class="absolute inset-x-0 flex justify-center top-35">
-        <div class="rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/80 backdrop-blur-sm">
+      <div class="absolute inset-x-0 flex justify-center top-30">
+        <div
+          class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] backdrop-blur-sm"
+          style={nameplateStyle()}
+        >
           {props.label}
         </div>
       </div>

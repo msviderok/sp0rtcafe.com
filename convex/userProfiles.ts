@@ -11,6 +11,7 @@ import {
   isPlayableCharacterId,
 } from "../src/lib/characterCatalog";
 import { normalizeEmailAddress } from "../src/lib/email";
+import { getAccessibleUserColor } from "../src/lib/userColors";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
@@ -144,6 +145,7 @@ export async function ensureCurrentUserProfile(ctx: MutationCtx): Promise<Doc<"u
   }
 
   const existing = await getUserProfileByEmail(ctx, identity.email);
+  const storedColor = getAccessibleUserColor(existing?.options?.color, identity.tokenIdentifier);
 
   if (existing) {
     const derivedIdentityNickname = deriveNicknameFromIdentity(identity.name, identity.email);
@@ -157,7 +159,8 @@ export async function ensureCurrentUserProfile(ctx: MutationCtx): Promise<Doc<"u
     const shouldPatch =
       existing.nickname !== nextNickname ||
       (existing.nicknameShort ?? "") !== nextNicknameShort ||
-      existing.options?.characterSprite !== nextCharacterSprite;
+      existing.options?.characterSprite !== nextCharacterSprite ||
+      existing.options?.color !== storedColor;
 
     if (!shouldPatch) {
       return existing;
@@ -171,6 +174,7 @@ export async function ensureCurrentUserProfile(ctx: MutationCtx): Promise<Doc<"u
       isCharacterPrivileged: existing.isCharacterPrivileged,
       options: {
         ...existing.options,
+        color: storedColor,
         characterSprite: nextCharacterSprite,
       },
       existing,
@@ -190,6 +194,7 @@ export async function ensureCurrentUserProfile(ctx: MutationCtx): Promise<Doc<"u
     nickname: generatedNickname.full,
     nicknameShort: generatedNickname.short,
     options: {
+      color: storedColor,
       characterSprite: getRandomPlayableCharacterId(),
     },
     existing: null,

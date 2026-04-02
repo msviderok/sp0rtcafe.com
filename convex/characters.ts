@@ -2,10 +2,10 @@ import { v } from "convex/values";
 import {
   CHARACTER_HEIGHT,
   CHARACTER_WIDTH,
-  getCharacterColor,
   getSpawnState,
   resolveCharacterState,
 } from "../src/lib/characterPhysics";
+import { getAccessibleUserColor } from "../src/lib/userColors";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import { ensureCurrentUserProfile } from "./userProfiles";
@@ -112,6 +112,7 @@ function resolveFacing(
 function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier: string | null) {
   const facing = resolveFacing(character.facing, character.vx, "right");
   const currentAnimation = character.currentAnimation ?? "Idle";
+  const colorSeed = character.tokenIdentifier ?? character.sessionId;
 
   return {
     _id: character._id,
@@ -140,7 +141,7 @@ function toPublicCharacter(character: Doc<"characters">, currentTokenIdentifier:
     facing,
     isRunning: character.isRunning ?? false,
     manualActionName: character.manualActionName ?? null,
-    color: character.color || getCharacterColor(character.tokenIdentifier ?? character.sessionId),
+    color: getAccessibleUserColor(character.profileOptions?.color ?? character.color, colorSeed),
     lastProcessedSequence: character.lastProcessedSequence,
     updatedAt: character.updatedAt,
     isCurrentUser:
@@ -160,11 +161,9 @@ function resolveCharacterColor(
     tokenIdentifier: string;
   },
 ) {
-  return (
-    profile?.options?.color ??
-    existing?.profileOptions?.color ??
-    existing?.color ??
-    getCharacterColor(getIdentityColorSeed(identity))
+  return getAccessibleUserColor(
+    profile?.options?.color ?? existing?.profileOptions?.color ?? existing?.color,
+    getIdentityColorSeed(identity),
   );
 }
 

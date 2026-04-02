@@ -1,3 +1,5 @@
+import { getGeneratedUserColor } from "./userColors";
+
 export type SceneBounds = {
   width: number;
   height: number;
@@ -28,8 +30,6 @@ export const CHARACTER_HEIGHT = 400;
 export const MOVE_SPEED = 500;
 export const JUMP_VELOCITY = 720;
 export const GRAVITY = 1800;
-
-const CHARACTER_PALETTE = ["#ff8a65", "#4dd0e1", "#ffd54f", "#81c784", "#ba68c8", "#64b5f6"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -63,13 +63,7 @@ function getVerticalSurfaceOrder(surfaces: CollisionSurface[], direction: number
 }
 
 export function getCharacterColor(sessionId: string) {
-  let hash = 0;
-
-  for (const character of sessionId) {
-    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  }
-
-  return CHARACTER_PALETTE[hash % CHARACTER_PALETTE.length];
+  return getGeneratedUserColor(sessionId);
 }
 
 export function getSpawnState(
