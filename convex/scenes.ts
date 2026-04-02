@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import { requireAdminAccess } from "./admin";
 
 const DEFAULT_SCENE_WIDTH = 1920;
 const DEFAULT_SCENE_HEIGHT = 1000;
@@ -56,6 +57,7 @@ async function chooseFallbackDefault(ctx: MutationCtx, deletedSceneId: Id<"scene
 export const list = query({
   args: {},
   handler: async (ctx) => {
+    await requireAdminAccess(ctx);
     const scenes = await ctx.db.query("scenes").take(100);
     return scenes
       .map(normalizeScene)
@@ -68,6 +70,7 @@ export const get = query({
     sceneId: v.id("scenes"),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const scene = await ctx.db.get(args.sceneId);
     return scene ? normalizeScene(scene) : null;
   },
@@ -93,6 +96,7 @@ export const getDefault = query({
 export const ensureStarterScene = mutation({
   args: {},
   handler: async (ctx) => {
+    await requireAdminAccess(ctx);
     const scenes = await getScenes(ctx);
     const defaultScene = scenes.find((scene) => scene.isDefault);
 
@@ -121,6 +125,7 @@ export const create = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const scenes = await getScenes(ctx);
     const sceneId = await ctx.db.insert("scenes", {
       name: args.name.trim() || "untitled",
@@ -143,6 +148,7 @@ export const update = mutation({
     showGrid: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const scene = await ctx.db.get(args.sceneId);
 
     if (!scene) {
@@ -172,6 +178,7 @@ export const setDefault = mutation({
     sceneId: v.id("scenes"),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const scene = await ctx.db.get(args.sceneId);
 
     if (!scene) {
@@ -188,6 +195,7 @@ export const remove = mutation({
     sceneId: v.id("scenes"),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const scene = await ctx.db.get(args.sceneId);
 
     if (!scene) {

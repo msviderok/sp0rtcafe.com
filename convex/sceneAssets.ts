@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireAdminAccess } from "./admin";
 
 const DEFAULT_MAX_DROP_WIDTH = 320;
 const DEFAULT_MAX_DROP_HEIGHT = 320;
@@ -76,6 +77,7 @@ export const place = mutation({
     y: v.number(),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const sprite = await ctx.db.get(args.spriteId);
 
     if (!sprite) {
@@ -130,6 +132,7 @@ export const update = mutation({
     bgSize: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const asset = await ctx.db.get(args.assetId);
 
     if (!asset) {
@@ -197,6 +200,7 @@ export const remove = mutation({
     assetId: v.id("sceneAssets"),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const asset = await ctx.db.get(args.assetId);
 
     if (!asset) {
@@ -225,6 +229,7 @@ export const restore = mutation({
     bgSize: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     return await ctx.db.insert("sceneAssets", args);
   },
 });
@@ -250,6 +255,7 @@ export const duplicate = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const sceneAssets = await ctx.db
       .query("sceneAssets")
       .withIndex("by_sceneId", (q) => q.eq("sceneId", args.sceneId))
@@ -298,6 +304,7 @@ export const reorder = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     for (const update of args.updates) {
       const asset = await ctx.db.get(update.assetId);
       if (!asset) {

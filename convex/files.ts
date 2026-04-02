@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import { requireAdminAccess } from "./admin";
 
 const fileStatusValidator = v.union(
   v.literal("pending"),
@@ -246,6 +247,7 @@ export const syncUploadedImagesToSprites = mutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 200), 200));
     const files = await ctx.db
       .query("files")
@@ -273,6 +275,7 @@ export const syncUploadedImagesToSprites = mutation({
 export const listRecent = query({
   args: {},
   handler: async (ctx) => {
+    await requireAdminAccess(ctx);
     return await ctx.db.query("files").order("desc").take(200);
   },
 });
@@ -280,6 +283,7 @@ export const listRecent = query({
 export const listActiveUploads = query({
   args: {},
   handler: async (ctx) => {
+    await requireAdminAccess(ctx);
     const [pending, uploading, failed] = await Promise.all([
       ctx.db.query("files").withIndex("by_status", (q) => q.eq("status", "pending")).take(20),
       ctx.db.query("files").withIndex("by_status", (q) => q.eq("status", "uploading")).take(20),

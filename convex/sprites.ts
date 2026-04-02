@@ -1,9 +1,11 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireAdminAccess } from "./admin";
 
 export const getByUrl = query({
   args: { url: v.string() },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     return await ctx.db
       .query("sprites")
       .withIndex("by_url", (q) => q.eq("url", args.url))
@@ -19,6 +21,7 @@ export const create = mutation({
     height: v.number(),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const existing = await ctx.db
       .query("sprites")
       .withIndex("by_url", (q) => q.eq("url", args.url))
@@ -40,6 +43,7 @@ export const updatePresetStyle = mutation({
     bgSize: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAdminAccess(ctx);
     const sprite = await ctx.db.get(args.spriteId);
 
     if (!sprite) {
@@ -69,6 +73,7 @@ export const updatePresetStyle = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
+    await requireAdminAccess(ctx);
     return await ctx.db.query("sprites").order("desc").take(200);
   },
 });

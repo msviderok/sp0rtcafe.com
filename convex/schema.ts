@@ -107,6 +107,7 @@ export default defineSchema({
     email: v.string(),
     normalizedEmail: v.string(),
     nickname: v.string(),
+    isAdmin: v.optional(v.boolean()),
     options: v.optional(userProfileOptionsValidator),
     updatedAt: v.number(),
   }).index("by_normalizedEmail", ["normalizedEmail"]),

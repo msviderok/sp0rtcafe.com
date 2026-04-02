@@ -1,12 +1,10 @@
 import { ConvexHttpClient } from 'convex/browser';
 import type { FileRouter } from 'uploadthing/server';
-import { createUploadthing, UploadThingError } from 'uploadthing/server';
+import { createUploadthing } from 'uploadthing/server';
 import { api } from '../../convex/_generated/api';
 
 const f = createUploadthing();
 const convex = import.meta.env.VITE_CONVEX_URL ? new ConvexHttpClient(import.meta.env.VITE_CONVEX_URL) : null;
-
-const auth = (req: Request) => ({ id: 'fakeId' }); // Fake auth function
 
 export const uploadRouter = {
 	// Define as many FileRoutes as you like, each with a unique routeSlug
@@ -21,20 +19,11 @@ export const uploadRouter = {
 		},
 	})
 		// Set permissions and file types for this FileRoute
-		.middleware(async ({ req }) => {
-			// This code runs on your server before upload
-			const user = await auth(req);
-
-			// If you throw, the user will not be able to upload
-			if (!user) throw new UploadThingError('Unauthorized');
-
-			// Whatever is returned here is accessible in onUploadComplete as `metadata`
-			return { userId: user.id };
+		.middleware(async () => {
+			return { authorized: true };
 		})
-		.onUploadComplete(async ({ metadata, file }) => {
+		.onUploadComplete(async ({ file }) => {
 			// This code RUNS ON YOUR SERVER after upload
-			console.log('Upload complete for userId:', metadata.userId);
-
 			console.log('file url', file.ufsUrl);
 
 			if (convex) {
@@ -56,7 +45,7 @@ export const uploadRouter = {
 			}
 
 			// !!! Whatever is returned here is sent to the clientside `onClientUploadComplete` callback
-			return { uploadedBy: metadata.userId };
+			return { uploaded: true };
 		}),
 } satisfies FileRouter;
 
