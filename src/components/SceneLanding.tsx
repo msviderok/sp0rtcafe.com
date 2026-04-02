@@ -522,13 +522,12 @@ function LandingSceneCanvas(props: { sceneId: Id<"scenes">; width: number; heigh
   let cameraInitialized = false;
 
   const collisionSurfaces = createMemo(() => resolveCollisionSurfaces(assets.data() ?? []));
-  const ownCharacter = createMemo(
-    () =>
-      !socketConnected()
-        ? null
-        : (((characters.data() as SceneCharacter[] | undefined) ?? []).find(
-            (character) => character.isCurrentUser
-          ) ?? null)
+  const ownCharacter = createMemo(() =>
+    !socketConnected()
+      ? null
+      : (((characters.data() as SceneCharacter[] | undefined) ?? []).find(
+          (character) => character.isCurrentUser
+        ) ?? null)
   );
   const otherCharacters = createMemo(() => {
     if (!socketConnected()) {
